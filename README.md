@@ -93,21 +93,46 @@ flowchart LR
 
 **Gates:** 1 alignment QC · 2 picks QC · 3 state selection · 4 resolution · 5 joint-M refinement.
 
+## Getting started
+
+**What this is.** OPUS-ET-AGENT is four [Claude Code](https://code.claude.com/docs) **Agent Skills** — not a standalone program. The "app" is Claude Code itself: you describe your dataset in plain language, and Claude Code, driving these skills, runs the pipeline and pauses at each gate for your sign-off. `opus-et-conductor` orchestrates the other three (`opus-et-warp`, `opus-et-analysis`, `opus-et-visualize`).
+
+**Prerequisites**
+- [**Claude Code**](https://code.claude.com/docs) — the agent that runs the skills.
+- **For a real run** — an HPC cluster (SLURM + GPUs) with the cryo-ET toolchain the skills drive: **WARP** (the [`alncat` fork](https://github.com/alncat/warp), required for `--dont_correct_ctf_3d` / `--output_ctf_csv`), **AreTomo2**, **PyTOM**, **OPUS-ET** (`dsdsh`), and **M** (`MTools` / `MCore`), each in its conda env. The conductor's preflight probes for these and reports whatever is missing — it does not install them.
+- **For the in-cell finale** — a local **ChimeraX 1.10 + ArtiaX 0.7.0** desktop (the render runs locally, not on the cluster).
+
+**Install the skills.** Clone the repo and make the four skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy each in:
+
+```bash
+git clone https://github.com/alncat/opus-et-agent.git
+cd opus-et-agent
+mkdir -p .claude/skills
+for s in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize; do
+  ln -s "../../$s" ".claude/skills/$s"   # or: cp -r "$s" ".claude/skills/$s"
+done
+```
+
+**Run it.** Open Claude Code in your working directory and hand off the dataset — the conductor takes it from there:
+
+> *"I have a cryo-ET dataset to process end-to-end, on my `<cluster>` cluster; frames + acquisition MDOCs are under `<DATA_DIR>`. Use the OPUS-ET conductor: preflight the toolchain, auto-detect the acquisition parameters, write and validate `pipeline.conf`, and begin the pipeline — pausing at each scientific checkpoint for my sign-off."*
+
+Progress lives in `.opus_run_state.json`, so a fresh Claude Code session resumes from disk, not from chat history. The full per-gate walkthrough — with the exact prompts for each checkpoint — is in [`demo/video_script.md`](demo/video_script.md).
+
+**Try it without a cluster.** The QC / analysis / viz tools are plain Python and test-covered — run the suite and browse the results bundle:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest          # 187 tests, all green
+```
+
+[`demo/README.md`](demo/README.md) tells the figure-by-figure scientific story.
+
 ## Results & demo
 
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
 - **[demo/video_script.md](demo/video_script.md)** — the ≤3:00 demo-video **script** (story + shot list + how to capture, in one doc).
 - **[SUBMISSION.md](SUBMISSION.md)** — hackathon deliverables tracker.
-
-## Development
-
-Every QC/analysis/viz tool is test-covered (TDD) — **187 tests**, all green:
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-.venv/bin/pytest
-```
 
 ## Acknowledgements
 
