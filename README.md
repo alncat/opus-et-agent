@@ -6,6 +6,11 @@ pipeline end-to-end — **WARP → AreTomo2 → PyTOM → OPUS-ET → M** — pa
 back **inside the cell** (ChimeraX/ArtiaX). Built on top of a set of great cryo-ET data-processing
 software — **WARP/M**, **AreTomo2**, **PyTOM**, **OPUS-ET**, **ChimeraX**, and **ArtiaX**.
 
+<p align="center">
+  <img src="demo/qc/finale/finale_insitu_still.png" width="860" alt="Thousands of ribosomes (blue) and fatty-acid synthase (gold) placed at their refined poses inside one real tomogram"><br>
+  <sub><em>The payoff — every ribosome (blue) and fatty-acid synthase (gold) placed back at its pose inside one real cell: <b>molecular sociology</b>, read straight off the data.&nbsp; ▶ <a href="demo/qc/finale/finale_insitu.mp4">flythrough</a></em></sub>
+</p>
+
 ## The task — and why it matters
 
 **Cryo-electron tomography (cryo-ET)** is the only technique that resolves macromolecules at
@@ -129,6 +134,19 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 [`demo/README.md`](demo/README.md) tells the figure-by-figure scientific story.
 
 ## Results & demo
+
+**Two molecules, resolved together and mapped back into the cell.** With one config change and no new code, the same pipeline drove a ribosome to **7.76 Å** and the far rarer fatty-acid synthase to **13.88 Å**, refined jointly in a single M population.
+
+<p align="center">
+  <img src="demo/qc/finale/m_refined_maps.png" width="860" alt="M-refined maps — ribosome 7.76 Å (blue) and FAS 13.88 Å D3 (gold), refined together at the same scale"><br>
+  <img src="demo/qc/finale/m_refined_fsc.png" width="700" alt="Gold-standard, phase-randomization-corrected FSC — ribosome 7.76 Å and FAS 13.88 Å at the 0.143 threshold">
+</p>
+
+At **Gate 3**, OPUS-ET's latent space is clustered into 20 compositional states; the agent brings four converging, mostly template-free signals to name the genuine high-resolution core instead of trusting one biased score:
+
+<p align="center">
+  <img src="demo/qc/gate3_states/ribo_state_gallery_3d.png" width="820" alt="20 k-means compositional-state maps from the OPUS-ET latent space, each fair-colored">
+</p>
 
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
 - **[demo/video_script.md](demo/video_script.md)** — the ≤3:00 demo-video **script** (story + shot list + how to capture, in one doc).
