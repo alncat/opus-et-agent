@@ -31,7 +31,10 @@ payoff is in the results: on a real dataset ([EMPIAR-10988](https://www.ebi.ac.u
 it drove **two** molecular species to high resolution at once — the **ribosome to 7.76 Å** and
 **fatty-acid synthase to 13.88 Å** — and mapped both back into the cell as *molecular sociology*.
 Why it matters: a weeks-long, expert-only workflow becomes a reproducible, test-covered,
-agent-driven one that still keeps the scientist in command of every call that matters.
+agent-driven one that still keeps the scientist in command of every call that matters — and
+mapping molecules back into the cell turns isolated structures into a map of *who sits next to
+whom*, where the crowding, exclusion zones, and neighbour relationships that purified structures
+can't show make subtler in-cell molecular mechanisms discoverable.
 
 **The whole arc at a glance** — raw movies → tomogram → picks → OPUS-ET states → M-refined maps →
 the two molecules mapped back into the cell:
@@ -157,6 +160,17 @@ The **same workflow generalizes to a second species, zero code changes.** Fatty-
 
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
 - **[demo/video_script.md](demo/video_script.md)** — the ≤3:00 demo-video **script** (story + shot list + how to capture, in one doc).
+
+## Future directions
+
+**State-resolved molecular sociology.** OPUS-ET's distinctive power is resolving each particle's
+conformational/compositional **state**; the natural next step is to carry that per-particle state
+into the in-cell map — colouring every placed molecule not just by *where* it sits but by *what
+functional state it's in there*. Combining position with state turns the finale from a map of
+locations into a map of *behaviour* — which ribosomes are actively translating and where, which
+assemblies are engaged vs. idle — the biological context you can only read when you know both a
+molecule's place and its state. Deeply integrating OPUS-ET this way is how OPUS-ET-AGENT delivers
+progressively richer biological context over time.
 
 ## Acknowledgements
 
