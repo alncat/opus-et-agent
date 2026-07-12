@@ -222,6 +222,13 @@ while 3D detail, latent separation, and map-to-map consistency converge on isola
 high-resolution D3 barrel state** from the smoother/junk clusters — the identical honest playbook,
 run on a structurally different, much rarer molecule.
 
+![FAS 30-state heterogeneity gallery](qc/gate3_states/fas_state_gallery_3d.png)
+
+*FAS's 30 k-means compositional states (same fair-coloring rule as the ribosome gallery — never
+highlight a subset). Most are smeared or partial; several resolve the clean **D3 barrel with its
+3-fold central pore** — the genuine high-resolution population the four-signal workflow isolates
+from the junk. Exactly why a sparse species is clustered at a higher k than the ribosome's 20.*
+
 The chosen FAS state was carried into **fixed-mode reconstruction** the same way as the ribosome
 (half-map split, `train_opuset_fixed.slurm`). Symmetry gives a meaningful before/after: the
 **D3-symmetrized halves reach ~25.6 Å (corrected FSC, 0.143)**, while the **C1 (unsymmetrized)

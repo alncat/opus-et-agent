@@ -148,6 +148,13 @@ At **Gate 3**, OPUS-ET's latent space is clustered into 20 compositional states;
   <img src="demo/qc/gate3_states/ribo_state_gallery_3d.png" width="820" alt="20 k-means compositional-state maps from the OPUS-ET latent space, each fair-colored">
 </p>
 
+The **same workflow generalizes to a second species, zero code changes.** Fatty-acid synthase is far sparser, so its latent space is clustered into 30 states — most are junk, and the clean **D3 barrels** (with their 3-fold central pore) stand out as the real high-resolution population:
+
+<p align="center">
+  <img src="demo/qc/gate3_states/fas_state_gallery_3d.png" width="820" alt="30 FAS k-means state maps — most junk, several resolving the D3 barrel with its 3-fold central pore"><br>
+  <sub><em>The rarer molecule, same honest playbook — see the D3 barrels emerge from the junk clusters.</em></sub>
+</p>
+
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
 - **[demo/video_script.md](demo/video_script.md)** — the ≤3:00 demo-video **script** (story + shot list + how to capture, in one doc).
 - **[SUBMISSION.md](SUBMISSION.md)** — hackathon deliverables tracker.
