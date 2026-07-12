@@ -8,7 +8,7 @@ software — **WARP/M**, **AreTomo2**, **PyTOM**, **OPUS-ET**, **ChimeraX**, and
 
 <p align="center">
   <img src="demo/qc/finale/finale_insitu_still.png" width="860" alt="Thousands of ribosomes (blue) and fatty-acid synthase (gold) placed at their refined poses inside one real tomogram"><br>
-  <sub><em>The payoff — every ribosome (blue) and fatty-acid synthase (gold) placed back at its pose inside one real cell: <b>molecular sociology</b>, read straight off the data.&nbsp; ▶ <a href="demo/qc/finale/finale_insitu.mp4">flythrough</a></em></sub>
+  <sub><em>The payoff — every ribosome (blue) and fatty-acid synthase (gold) placed back at its pose inside one real cell: <b>molecular sociology</b>, read straight off the data.&nbsp; ▶ <a href="demo/README.md#gate5">watch it rotate</a></em></sub>
 </p>
 
 ## The task — and why it matters

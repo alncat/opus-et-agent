@@ -302,10 +302,10 @@ The same two maps, rotating — the **7.76 Å ribosome** (rRNA helices resolved)
 The refined maps map **back into the tomogram** — every particle's pose populated with its
 species' density, the two molecules in their true cellular arrangement (**molecular sociology**):
 
-[![in-cell finale — click to play the flythrough](qc/finale/finale_insitu_still.png)](qc/finale/finale_insitu.mp4)
+![in-cell finale — ribosomes and FAS at their poses, rotating](qc/finale/finale_insitu.gif)
 
-> ▶ **[Play the flythrough movie](qc/finale/finale_insitu.mp4)** (or click the image above — GitHub plays it in its file viewer). Rendered locally in ChimeraX 1.10 + ArtiaX 0.7.0 — 3,387 ribosomes (blue) + 95 FAS (gold) at
-> their TS_028 poses; the movie is the gentle rock (tilt + shadows +
+> The gentle rock, autoplaying above (full-resolution [`finale_insitu.mp4`](qc/finale/finale_insitu.mp4) is in the repo — GitHub can't preview mp4 inline, so download it for full quality). Rendered locally in ChimeraX 1.10 + ArtiaX 0.7.0 — 3,387 ribosomes (blue) + 95 FAS (gold) at
+> their TS_028 poses; the motion is the gentle rock (tilt + shadows +
 > silhouettes, the same hero aesthetic as the TS_029 companion below). Reproduce via
 > `gen_artiax_scene.emit_cxc(..., tilt_x=-55, silhouettes=True, movie_rock=30, movie_step=3)` — silhouettes only, no shadows (they hang on thousands of instances), `demo/render_commands.md` §B.
 
@@ -313,13 +313,13 @@ TS_028 is ribosome-dense but its cytoplasm is near-uniform. To show the same mol
 cellular context**, the companion render uses **TS_029** — chosen by cross-referencing organelle
 content against particle count (1,825 ribosomes, and a large membrane-bound organelle):
 
-[![in-cell cellular context — TS_029, click to play](qc/finale/insitu_TS029_cell.png)](qc/finale/insitu_TS029.mp4)
+![in-cell cellular context — TS_029, rotating](qc/finale/insitu_TS029.gif)
 
 > The **1,825 ribosomes** (blue) crowd the cytoplasm but visibly **exclude the organelle** — the
 > clean round membrane arc on the right — while the 38 FAS (gold) mark the rare second species. The
 > ribosome-exclusion boundary is molecular sociology reading straight off the map: the pipeline's
-> poses, dropped back into a real cellular scene. ▶ **[Play the TS_029 rock](qc/finale/insitu_TS029.mp4)**
-> (or click the image); recipe in `demo/render_commands.md` §B3, driver `demo/finale/build_ts029_cell_scene.py`.
+> poses, dropped back into a real cellular scene. Full-resolution [`insitu_TS029.mp4`](qc/finale/insitu_TS029.mp4)
+> in the repo; recipe in `demo/render_commands.md` §B3, driver `demo/finale/build_ts029_cell_scene.py`.
 
 The finale places the *refined* FAS map (idealized). The inverse view **reveals the raw density**
 the picks land on — each of the 95 FAS in TS_028 zoomed to its own Z-plane, ring-marked so the raw
@@ -328,10 +328,14 @@ reconstruction inside stays visible (`particle_gallery.py`):
 ![raw FAS density gallery](qc/finale/fas_raw_gallery.png)
 
 > A ring marks the pipeline's pick; the interior is untouched raw reconstruction — the FAS particle
-> each pick lands on. `qc/finale/fas_raw_context.png` is the whole-slice overview (where in the cell),
-> and the ▶ **[Z-scan movie](qc/finale/fas_TS028_scan.mp4)** scans the slice through Z so each barrel appears under its
-> marker. This is the honest "is it really there?" check for a rare species — and the reusable
+> each pick lands on. `qc/finale/fas_raw_context.png` is the whole-slice overview (where in the cell).
+> This is the honest "is it really there?" check for a rare species — and the reusable
 > `particle_gallery.py` tool (20 tests) that produces it.
+
+![FAS Z-scan through the tomogram](qc/finale/fas_TS028_scan.gif)
+
+> Stepping the slice through Z: each FAS barrel appears under its marker as its plane comes into
+> focus (full-resolution [`fas_TS028_scan.mp4`](qc/finale/fas_TS028_scan.mp4) in the repo).
 
 ---
 
