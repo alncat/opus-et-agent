@@ -92,6 +92,14 @@ When recording, run the conductor in **replay mode**. Set `demo_replay: true` in
 
 ## Prompts to type (copy-paste per take)
 
+> **Exact paths matter.** The run dir holds multiple ribosome OPUS-ET runs (`z8`,
+> `z8_expanded`, `z8_angpix337_OLD`) and two Gate-4 half-map sets (`fixed_subset1/2` = the
+> final **k17/18/19** selection, `baseline_k6-8-9-10` = an earlier pick). The Gate-2/3/4
+> prompts below name the **exact** dirs so a live take never grabs the wrong run. Also: the
+> `.opus_run_state.json` is anchored at Gate 1 (Gates 2–4 were run ad-hoc, not through the
+> conductor loop), so for those gates the conductor runs the QC **directly on the named
+> outputs** rather than fast-forwarding a fully-recorded state — still genuine QC on real data.
+
 ### A. Initialize / hand-off (opening beat — start the run)
 A genuine cold kickoff: preflight → config → first jobs. Records the "you hand it off" beat.
 To show a *true* cold start, point it at a fresh processing dir (raw frames + MDOCs staged,
@@ -132,8 +140,10 @@ and tell me — don't launch anything.
 Same opening two sentences as B, then:
 ```
 ...Fast-forward to the picks-QC checkpoint (Gate 2), run the ribosome + FAS
-overlay QC and the tm_eval_agreement scores on the existing picks, and present
-them to me. If an expected output is genuinely missing, stop and tell me.
+overlay QC and the tm_eval_agreement scores on the existing picks — ribosome
+`template_matching/ribo/particles/*.xml`, FAS `template_matching/fas/particles/*.xml`
+(under the run dir) — and present them to me. If an expected output is genuinely
+missing, stop and tell me.
 ```
 
 ### D. Gate 3 — state selection (recordable now)
@@ -141,7 +151,9 @@ Same opening two sentences as B, then:
 ```
 ...Fast-forward to the state-selection checkpoint (Gate 3), run the four-signal
 analysis (template/consensus comparison, N×N map consistency, and the latent
-UMAP) on the existing state maps, and present the selection to me. If an
+UMAP) on the existing state maps in `opuset/ribo/z8_expanded/analyze.35/kmeans20`
+(the 20 k-means maps of the 58k expanded run — use exactly this dir, NOT the
+other `z8` / `z8_angpix337_OLD` runs), and present the selection to me. If an
 expected output is genuinely missing, stop and tell me.
 ```
 
@@ -149,10 +161,12 @@ expected output is genuinely missing, stop and tell me.
 Same opening two sentences as B, then:
 ```
 ...Fast-forward to the resolution checkpoint (Gate 4). On the existing fixed-mode
-half-maps, derive a molecule mask from the density (not a sphere), compute the
-gold-standard FSC with the phase-randomization correction, and present the
-corrected 0.143 resolution + the FSC curve for my sign-off before M refinement.
-If an expected output is genuinely missing, stop and tell me.
+half-maps `opuset/ribo/fixed_subset1/half1.mrc` + `opuset/ribo/fixed_subset2/half2.mrc`
+(the k17/18/19 selection at 4.2 Å/px — NOT `baseline_k6-8-9-10`), derive a molecule
+mask from the density (not a sphere), compute the gold-standard FSC with the
+phase-randomization correction, and present the corrected 0.143 resolution + the FSC
+curve for my sign-off before M refinement. If an expected output is genuinely missing,
+stop and tell me.
 ```
 
 ### Autonomous variant (more impressive, less controlled)

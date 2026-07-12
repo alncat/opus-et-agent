@@ -102,7 +102,8 @@ matching, OPUS-ET and M — nothing needs recomputing.
 We're screen-recording a demo, so run in REPLAY MODE: load the run state from disk and do
 NOT submit any SLURM jobs — if a phase's outputs already exist, treat it as done.
 Fast-forward to the picks-QC checkpoint (Gate 2), run the ribosome + FAS overlay QC and the
-tm_eval_agreement scores on the existing picks, and present them to me. If an expected output
+tm_eval_agreement scores on the existing picks — ribosome `template_matching/ribo/particles/*.xml`,
+FAS `template_matching/fas/particles/*.xml` — and present them to me. If an expected output
 is genuinely missing, stop and tell me — don't launch anything.
 ```
 
@@ -127,8 +128,9 @@ We're screen-recording a demo, so run in REPLAY MODE: load the run state from di
 NOT submit any SLURM jobs — if a phase's outputs already exist, treat it as done.
 Fast-forward to the state-selection checkpoint (Gate 3), run the four-signal analysis
 (template/consensus comparison, N×N map consistency, and the latent UMAP) on the existing
-state maps, and present the selection to me. If an expected output is genuinely missing,
-stop and tell me — don't launch anything.
+state maps in `opuset/ribo/z8_expanded/analyze.35/kmeans20` (the 58k expanded run — use exactly
+this dir, not the other z8* runs), and present the selection to me. If an expected output is
+genuinely missing, stop and tell me — don't launch anything.
 ```
 Assets: `gate3_states/ribo_states_vs_template_montage.png`, `ribo_state_consistency_raw.png`,
 `ribo_state_gallery_3d.png`, `ribo_latent_umap_states.png`.
@@ -153,10 +155,12 @@ matching, OPUS-ET and M — nothing needs recomputing.
 
 We're screen-recording a demo, so run in REPLAY MODE: load the run state from disk and do
 NOT submit any SLURM jobs — if a phase's outputs already exist, treat it as done.
-Fast-forward to the resolution checkpoint (Gate 4). On the existing fixed-mode half-maps,
-derive a molecule mask from the density (not a sphere), compute the gold-standard FSC with the
-phase-randomization correction, and present the corrected 0.143 resolution + the FSC curve for
-my sign-off. If an expected output is genuinely missing, stop and tell me — don't launch anything.
+Fast-forward to the resolution checkpoint (Gate 4). On the existing fixed-mode half-maps
+`opuset/ribo/fixed_subset1/half1.mrc` + `opuset/ribo/fixed_subset2/half2.mrc` (the k17/18/19
+selection — not baseline_k6-8-9-10), derive a molecule mask from the density (not a sphere),
+compute the gold-standard FSC with the phase-randomization correction, and present the corrected
+0.143 resolution + the FSC curve for my sign-off. If an expected output is genuinely missing,
+stop and tell me — don't launch anything.
 ```
 **Honesty guardrail:** quote the **corrected** FSC, and **per-species** resolutions from the log — never invent a combined number.
 
