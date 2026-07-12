@@ -94,6 +94,7 @@ new species config, zero code changes — a 0.97-recall pick set on a rare compl
 
 ---
 
+<a id="gate3"></a>
 ## Gate 3 — Heterogeneity + compositional-state selection  (`qc/gate3_states/`)
 
 The ribosome picks fed **OPUS-ET** heterogeneity training on **58,000 subtomograms** at the
@@ -208,6 +209,7 @@ needed here, and the correction keeps the reported number from being flattered b
 
 ---
 
+<a id="gate3b"></a>
 ## Gate 3b — FAS heterogeneity + state selection
 
 The FAS picks (Gate 2b, recall 0.973) fed their **own OPUS-ET heterogeneity run** — the same
@@ -241,6 +243,7 @@ much rarer molecule.
 
 ---
 
+<a id="gate5"></a>
 ## Gate 5 — Joint multi-species M refinement
 
 Both species now converge into **M**, WARP's downstream refinement engine, as **one shared

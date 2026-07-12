@@ -135,24 +135,24 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## Results & demo
 
-**Two molecules, resolved together and mapped back into the cell.** With one config change and no new code, the same pipeline drove a ribosome to **7.76 Å** and the far rarer fatty-acid synthase to **13.88 Å**, refined jointly in a single M population.
+**Two molecules, resolved together and mapped back into the cell.** With one config change and no new code, the same pipeline drove a ribosome to **7.76 Å** and the far rarer fatty-acid synthase to **13.88 Å**, refined jointly in a single M population. *(Click any figure to jump to its full write-up in the [results bundle](demo/README.md).)*
 
 <p align="center">
-  <img src="demo/qc/finale/m_refined_maps.png" width="860" alt="M-refined maps — ribosome 7.76 Å (blue) and FAS 13.88 Å D3 (gold), refined together at the same scale"><br>
-  <img src="demo/qc/finale/m_refined_fsc.png" width="700" alt="Gold-standard, phase-randomization-corrected FSC — ribosome 7.76 Å and FAS 13.88 Å at the 0.143 threshold">
+  <a href="demo/README.md#gate5"><img src="demo/qc/finale/m_refined_maps.png" width="860" alt="M-refined maps — ribosome 7.76 Å (blue) and FAS 13.88 Å D3 (gold), refined together at the same scale"></a><br>
+  <a href="demo/README.md#gate5"><img src="demo/qc/finale/m_refined_fsc.png" width="700" alt="Gold-standard, phase-randomization-corrected FSC — ribosome 7.76 Å and FAS 13.88 Å at the 0.143 threshold"></a>
 </p>
 
 At **Gate 3**, OPUS-ET's latent space is clustered into 20 compositional states; the agent brings four converging, mostly template-free signals to name the genuine high-resolution core instead of trusting one biased score:
 
 <p align="center">
-  <img src="demo/qc/gate3_states/ribo_state_gallery_3d.png" width="820" alt="20 k-means compositional-state maps from the OPUS-ET latent space, each fair-colored">
+  <a href="demo/README.md#gate3"><img src="demo/qc/gate3_states/ribo_state_gallery_3d.png" width="820" alt="20 k-means compositional-state maps from the OPUS-ET latent space, each fair-colored"></a>
 </p>
 
 The **same workflow generalizes to a second species, zero code changes.** Fatty-acid synthase is far sparser, so its latent space is clustered into 30 states — most are junk, and the clean **D3 barrels** (with their 3-fold central pore) stand out as the real high-resolution population:
 
 <p align="center">
-  <img src="demo/qc/gate3_states/fas_state_gallery_3d.png" width="820" alt="30 FAS k-means state maps — most junk, several resolving the D3 barrel with its 3-fold central pore"><br>
-  <sub><em>The rarer molecule, same honest playbook — see the D3 barrels emerge from the junk clusters.</em></sub>
+  <a href="demo/README.md#gate3b"><img src="demo/qc/gate3_states/fas_state_gallery_3d.png" width="820" alt="30 FAS k-means state maps — most junk, several resolving the D3 barrel with its 3-fold central pore"></a><br>
+  <sub><em>The rarer molecule, same honest playbook — see the D3 barrels emerge from the junk clusters. <a href="demo/README.md#gate3b">Full write-up →</a></em></sub>
 </p>
 
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
