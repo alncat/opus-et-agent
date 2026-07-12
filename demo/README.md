@@ -27,6 +27,11 @@ two molecules mapped back into the cell:
 Central-slice previews (`slice_preview.py`) confirm each tomogram reconstructed
 cleanly, plus a WARP↔AreTomo handedness check. All 10 passed.
 
+![reconstructed tomogram — XY central slice](qc/gate1_alignment/TS034_recon_xy.png)
+
+*XY central slice of a reconstructed tomogram (TS_034): lamella, membranes, and a dense,
+ribosome-bearing cytoplasm — real in-cell context, not a blank slab. All 10 tomograms passed QC.*
+
 | File | What it shows |
 |------|---------------|
 | `TS034_recon_xy.png` | XY central slice — lamella, membranes, dense cytoplasm |
@@ -46,6 +51,12 @@ picks and the **top-N by score**. This is the visual companion to
 **Numeric result:** on the richest tomogram (TS_034), TM recovered **100% of the
 curated reference set — recall 1.000 (2445/2445 `sel30` picks)** — decisively
 validating the template contrast, mask, and coordinate frame.
+
+![ribosome picks overlaid on a tomogram z-slab](qc/gate2_ribosome_picks/TS028_good_all-picks.png)
+
+*Ribosome template-match picks on a TS_028 z-slab: they blanket the ribosome-rich cytoplasm and
+avoid the empty lumen. The QC also discriminates — on the poor tomogram TS_041 the top-scoring
+picks instead land on a carbon/ice edge (`TS041_poor_top200_on-artifacts.png`), a clear "exclude" signal.*
 
 | File | What it shows |
 |------|---------------|
@@ -81,6 +92,12 @@ is a *curated subset*, and we deliberately over-extract 600 candidates per
 tomogram to guarantee recall for a rare species, so most extra picks scored as
 "false positives" are simply un-curated — precision is a lower bound, recall is
 the headline (see `tm_eval_agreement.py` docstring).
+
+![FAS picks overlaid on a tomogram z-slab](qc/gate2_fas_picks/TS028_fas_recall0.989_all.png)
+
+*The same three tools on a rarer molecule — FAS picks on a TS_028 z-slab (recall 0.989): sparser
+and smaller than ribosomes, distributed through the cytoplasm. Overall recall 0.973 across all 10
+tomograms, a new species config, zero code changes.*
 
 | File | What it shows |
 |------|---------------|
@@ -134,6 +151,12 @@ the **human kept k17/18/19 (14,797 particles)** → `sel_ribo.star`. The headlin
 sharpest maps in the whole set are exactly the ones the naive template score ranks worst** —
 the reason Gate 3 exists.
 
+![20 k-means compositional-state maps](qc/gate3_states/ribo_state_gallery_3d.png)
+
+*The 20 k-means compositional states (fair golden-angle coloring, 98th-percentile contour).
+Bottom-right **k17/18/19** are visibly the highest-resolution maps — discrete subunit
+granularity — yet the naive template-CC ranks them dead last. That inversion is the whole point.*
+
 `state_tomo_stats.py` also closes the **pick-more loop**: the three tomograms whose cap we
 raised (**TS_028 42%, TS_034 35%, TS_030 33%** of picks in the selected core) are flagged as
 the densest cells — the cap-raise targeted exactly the ribosome-rich tomograms, and they stay
@@ -164,6 +187,12 @@ mask artifact is removed.
 **low-resolution starting model imported into M**, which refines tilt-series alignment and
 per-particle poses from there — the high-frequency detail is M's job, not this half-map's.
 
+![gold-standard half-map FSC with phase-randomization correction](qc/gate4_resolution/ribo_fsc_corrected.png)
+
+*The gold-standard half-map FSC: masked, phase-randomized, and the honest **corrected** curve —
+0.143 crossing at 18.26 Å. Correcting for the mask-induced correlation is what keeps the reported
+resolution from being flattered; this ~18 Å map is the starting model M refines from.*
+
 Because the FSC is only honest if the mask *follows the molecule*, the checkpoint also **shows the
 mask, not just trusts it**: `gen_mask_from_map.py --qc` overlays the derived mask envelope on the
 density in three orthogonal central slices. The mask wraps each molecule snugly without clipping —
@@ -181,31 +210,6 @@ The takeaway: **one correlation-to-template score was misleading; four convergin
 template-free signals pinpoint the real high-res core *and* honestly flag the one ambiguous
 cluster.** That is the agent's Gate-3 job — surface the evidence and its disagreements, leave
 the scientific call to the human.
-
----
-
-## Gate 4 — Resolution sign-off  (`qc/gate4_resolution/ribo_fsc_*`)
-
-Fixed-mode training splits the selected particles into two independent half-maps (gold-standard
-protocol). Resolution is the Fourier-shell correlation between them — but two subtleties that a
-careless pipeline gets wrong, and the agent gets right:
-
-1. **Mask from the density, not a sphere** (`gen_mask_from_map.py`): a soft *sphere* mask
-   correlates with itself and fakes a high-frequency FSC rise. The mask is derived from the
-   reconstruction (threshold → largest connected component → soft cosine edge).
-2. **Phase-randomization correction** (`compute_fsc.py`, RELION high-res noise substitution):
-   even a molecule mask injects some correlation. The tool randomizes phases beyond the
-   masked-FSC-0.8 shell, re-applies the mask, and subtracts that mask-only correlation —
-   `corrected = (FSC_masked − FSC_random)/(1 − FSC_random)`. The **corrected** 0.143 crossing is
-   the honest number.
-
-Only a **low-resolution** map is imported into **M**, which then refines tilt-series alignment
-and per-particle poses toward higher resolution — so the honest low-res FSC is exactly what's
-needed here, and the correction keeps the reported number from being flattered by the mask.
-
-| File | What it shows |
-|------|---------------|
-| `ribo_fsc_corrected.png` / `ribo_fsc_corrected.tsv` | masked vs. phase-randomization-corrected FSC, resolution at 0.143 |
 
 ---
 
