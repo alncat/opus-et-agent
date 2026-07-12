@@ -92,12 +92,12 @@ flowchart LR
 
     H -->|dataset + intent| COND
     COND -->|drives| TOOLS
-    WARP -->|SLURM jobs| CLUSTER
-    CLUSTER -->|"tomograms, maps, metadata"| ANA
-    ANA -->|QC evidence| COND
+    TOOLS -->|SLURM jobs| CLUSTER
+    CLUSTER -->|"tomograms, maps, metadata"| TOOLS
+    TOOLS -->|QC evidence| COND
     COND ==>|"gate: keep / choose?"| H
     H ==>|sign-off| COND
-    VIZ -->|molecules back in the cell| H
+    TOOLS -->|molecules back in the cell| H
 ```
 
 **Gates:** 1 alignment QC · 2 picks QC · 3 state selection · 4 resolution · 5 joint-M refinement.
