@@ -85,6 +85,7 @@ flowchart LR
       WARP["opus-et-warp<br/>WARP · AreTomo2 · PyTOM · OPUS-ET · M"]
       ANA["opus-et-analysis<br/>QC · masks/FSC · k-means states · picks eval"]
       VIZ["opus-et-visualize<br/>ChimeraX · ArtiaX in-cell scenes"]
+      WARP ~~~ ANA ~~~ VIZ
     end
 
     CLUSTER[("HPC cluster<br/>SLURM · GPU")]
