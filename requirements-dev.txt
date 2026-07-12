@@ -1,0 +1,7 @@
+pytest>=8.0
+starfile>=0.5
+pandas>=2.0
+numpy>=1.24
+mrcfile>=1.4
+scipy>=1.10          # gen_mask_from_map (ndimage), state_consistency (hierarchy) — lazy-imported
+matplotlib>=3.7      # QC renders: mask overlay, picks overlay, slice preview, state gallery

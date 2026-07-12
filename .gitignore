@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.pytest_cache/
+.opus_run_state.json
+*.tmp
+.superpowers/
+gate1_qc/
+gate3_chimerax/
+scratch_finale/
+scratch_panels/

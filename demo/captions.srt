@@ -1,0 +1,95 @@
+1
+00:00:00,500 --> 00:00:07,500
+Cryo-electron tomography turns raw movies of a cell
+into molecular maps inside that cell.
+
+2
+00:00:08,000 --> 00:00:14,500
+Normally it's a week of babysitting a dozen tools.
+Here — you hand it off.
+
+3
+00:00:16,000 --> 00:00:22,000
+First checkpoint. It doesn't ask you to trust it —
+it shows you:
+
+4
+00:00:22,500 --> 00:00:31,000
+every tomogram reconstructed, one QC agent each,
+a handedness check so downstream poses aren't mirrored.
+
+5
+00:00:31,500 --> 00:00:37,000
+Ten of ten. You sign off.
+
+6
+00:00:50,500 --> 00:00:57,000
+Next checkpoint: it finds the molecules.
+Template matching, scored —
+
+7
+00:00:57,500 --> 00:01:07,000
+and the QC tells good tomograms from bad: here the picks
+follow the cell; there, the strongest hits sit on an ice
+edge — so that tomogram is out.
+
+8
+00:01:07,500 --> 00:01:17,000
+Then the same tools, a new config, no new code —
+and it finds a second, much rarer machine,
+at ninety-seven-percent recall.
+
+9
+00:01:18,500 --> 00:01:24,000
+The payoff checkpoint.
+Which of these twenty blobs are real ribosomes?
+
+10
+00:01:24,500 --> 00:01:32,000
+One score would mislead you — a low-res template loves
+a smooth blob, and ranks the sharpest maps last.
+
+11
+00:01:32,500 --> 00:01:41,000
+So it brings four measurements, mostly template-free,
+and shows you where they agree and where they fight.
+
+12
+00:01:41,500 --> 00:01:51,000
+It names the confident core, flags the ambiguous cluster —
+instead of hiding it. Then it steps back. You decide.
+
+13
+00:02:05,500 --> 00:02:13,000
+Resolution, measured honestly — the mask can fake signal,
+so it randomizes the phases and subtracts that off.
+
+14
+00:02:13,500 --> 00:02:23,000
+Then both molecules go into one refinement population,
+so the tilt-series model is solved with every particle
+from both —
+
+15
+00:02:23,500 --> 00:02:31,000
+ribosomes anchor the geometry, and the rare species
+rides along.
+
+16
+00:02:32,500 --> 00:02:40,000
+The result: a ribosome at seven-point-eight ångströms,
+and fatty-acid synthase at fourteen — its D-three barrel, resolved.
+
+17
+00:02:40,500 --> 00:02:48,000
+Then both maps go back where they live — every molecule,
+at its pose, inside the cell.
+
+18
+00:02:48,500 --> 00:02:54,000
+Molecular sociology, read straight off the data.
+
+19
+00:02:55,000 --> 00:03:00,000
+State on disk, not chat. Gates for judgment.
+An agent you supervise — not a script you babysit.
