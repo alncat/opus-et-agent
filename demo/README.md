@@ -157,9 +157,9 @@ the reason Gate 3 exists.
 Bottom-right **k17/18/19** are visibly the highest-resolution maps — discrete subunit
 granularity — yet the naive template-CC ranks them dead last. That inversion is the whole point.*
 
-`state_tomo_stats.py` also closes the **pick-more loop**: the three tomograms whose cap we
-raised (**TS_028 42%, TS_034 35%, TS_030 33%** of picks in the selected core) are flagged as
-the densest cells — the cap-raise targeted exactly the ribosome-rich tomograms, and they stay
+`state_tomo_stats.py` also closes the **pick-more loop**: the four tomograms whose cap we
+raised (**TS_028 42%, TS_034 35%, TS_030 33%, TS_029 30%** of picks in the selected core) are the
+four densest cells — the cap-raise targeted exactly the ribosome-rich tomograms, and they stay
 the densest even after raising the cap.
 
 | File | What it shows |
@@ -344,7 +344,7 @@ reconstruction inside stays visible (`particle_gallery.py`):
 The agent doesn't just execute — it **keeps the pipeline correct and improves the result**:
 
 - **Optimized the pick set per tomogram.** A uniform 5,000-candidate cap truncates the *densest*
-  tomograms (`state_tomo_stats.py`: TS_028 59%, TS_034 55% of picks landing in the good states).
+  tomograms (`state_tomo_stats.py`: TS_028 42%, TS_034 35% of picks landing in the selected high-res core).
   The agent re-picks only those tomograms at a higher cap — reusing the existing template-match
   scores, no re-search — and **warm-starts** OPUS-ET from a mid-training checkpoint (10 epochs,
   not a 40-epoch retrain), folding ~8,000 more particles into the set (50k → 58k).
