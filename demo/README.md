@@ -288,18 +288,24 @@ refinement thesis. The ribosome gives up nothing measurable to carry the second 
 
 ![M-refined maps](qc/finale/m_refined_maps.png)
 
-> Rotating showcases of each refined map: `qc/finale/m_refined_ribo_spin.mp4` (the 7.76 Å
-> ribosome — rRNA helices resolved) and `qc/finale/m_refined_fas_spin.mp4` (the 13.88 Å FAS D3
-> barrel). Plain-ChimeraX turntables (contour ≈ mean+4σ, speckle removed, shadowed on white);
-> driver `demo/finale/build_map_spins.py`.
+The same two maps, rotating — the **7.76 Å ribosome** (rRNA helices resolved) and the **13.88 Å FAS D3 barrel**:
+
+<p align="center">
+  <img src="qc/finale/m_refined_ribo_spin.gif" width="360" alt="Ribosome 7.76 Å map rotating">
+  &nbsp;&nbsp;
+  <img src="qc/finale/m_refined_fas_spin.gif" width="360" alt="FAS 13.88 Å D3 barrel map rotating">
+</p>
+
+> Plain-ChimeraX turntables (contour ≈ mean+4σ, speckle removed, shadowed on white); driver
+> `demo/finale/build_map_spins.py`. Full-resolution `.mp4` versions sit alongside the GIFs in `qc/finale/`.
 
 The refined maps map **back into the tomogram** — every particle's pose populated with its
 species' density, the two molecules in their true cellular arrangement (**molecular sociology**):
 
-![in-cell finale](qc/finale/finale_insitu_still.png)
+[![in-cell finale — click to play the flythrough](qc/finale/finale_insitu_still.png)](qc/finale/finale_insitu.mp4)
 
-> Rendered locally in ChimeraX 1.10 + ArtiaX 0.7.0 — 3,387 ribosomes (blue) + 95 FAS (gold) at
-> their TS_028 poses; `demo/qc/finale/finale_insitu.mp4` is the gentle rock (tilt + shadows +
+> ▶ **[Play the flythrough movie](qc/finale/finale_insitu.mp4)** (or click the image above — GitHub plays it in its file viewer). Rendered locally in ChimeraX 1.10 + ArtiaX 0.7.0 — 3,387 ribosomes (blue) + 95 FAS (gold) at
+> their TS_028 poses; the movie is the gentle rock (tilt + shadows +
 > silhouettes, the same hero aesthetic as the TS_029 companion below). Reproduce via
 > `gen_artiax_scene.emit_cxc(..., tilt_x=-55, silhouettes=True, movie_rock=30, movie_step=3)` — silhouettes only, no shadows (they hang on thousands of instances), `demo/render_commands.md` §B.
 
@@ -307,13 +313,13 @@ TS_028 is ribosome-dense but its cytoplasm is near-uniform. To show the same mol
 cellular context**, the companion render uses **TS_029** — chosen by cross-referencing organelle
 content against particle count (1,825 ribosomes, and a large membrane-bound organelle):
 
-![in-cell cellular context — TS_029](qc/finale/insitu_TS029_cell.png)
+[![in-cell cellular context — TS_029, click to play](qc/finale/insitu_TS029_cell.png)](qc/finale/insitu_TS029.mp4)
 
 > The **1,825 ribosomes** (blue) crowd the cytoplasm but visibly **exclude the organelle** — the
 > clean round membrane arc on the right — while the 38 FAS (gold) mark the rare second species. The
 > ribosome-exclusion boundary is molecular sociology reading straight off the map: the pipeline's
-> poses, dropped back into a real cellular scene. `demo/qc/finale/insitu_TS029.mp4` is the gentle
-> rock; recipe in `demo/render_commands.md` §B3, driver `demo/finale/build_ts029_cell_scene.py`.
+> poses, dropped back into a real cellular scene. ▶ **[Play the TS_029 rock](qc/finale/insitu_TS029.mp4)**
+> (or click the image); recipe in `demo/render_commands.md` §B3, driver `demo/finale/build_ts029_cell_scene.py`.
 
 The finale places the *refined* FAS map (idealized). The inverse view **reveals the raw density**
 the picks land on — each of the 95 FAS in TS_028 zoomed to its own Z-plane, ring-marked so the raw
@@ -323,7 +329,7 @@ reconstruction inside stays visible (`particle_gallery.py`):
 
 > A ring marks the pipeline's pick; the interior is untouched raw reconstruction — the FAS particle
 > each pick lands on. `qc/finale/fas_raw_context.png` is the whole-slice overview (where in the cell),
-> and `qc/finale/fas_TS028_scan.mp4` scans the slice through Z so each barrel appears under its
+> and the ▶ **[Z-scan movie](qc/finale/fas_TS028_scan.mp4)** scans the slice through Z so each barrel appears under its
 > marker. This is the honest "is it really there?" check for a rare species — and the reusable
 > `particle_gallery.py` tool (20 tests) that produces it.
 
