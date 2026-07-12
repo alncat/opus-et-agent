@@ -70,7 +70,7 @@ makes every judgment call, at five gates.
 
 ```mermaid
 flowchart LR
-    H(["Scientist<br/>intent in · decisions at the gates"])
+    H(["<b>SCIENTIST</b><br/>the domain expert<br/>intent · decisions at the gates"])
 
     subgraph COND["Claude Code — the Conductor (opus-et-conductor)"]
       direction TB
@@ -90,14 +90,16 @@ flowchart LR
 
     CLUSTER[("HPC cluster<br/>SLURM · GPU")]
 
-    H -->|dataset + intent| COND
+    H -->|"dataset + intent"| COND
+    COND ==>|"gate: keep / choose?"| H
+    H ==>|"sign-off + domain-knowledge suggestions"| COND
     COND -->|drives| TOOLS
     TOOLS -->|SLURM jobs| CLUSTER
     CLUSTER -->|"tomograms, maps, metadata"| TOOLS
     TOOLS -->|QC evidence| COND
-    COND ==>|"gate: keep / choose?"| H
-    H ==>|sign-off| COND
     TOOLS -->|molecules back in the cell| H
+
+    style H fill:#ffe8cc,stroke:#e8590c,stroke-width:4px,font-size:18px
 ```
 
 **Gates:** 1 alignment QC · 2 picks QC · 3 state selection · 4 resolution · 5 joint-M refinement.
