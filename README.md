@@ -157,7 +157,6 @@ The **same workflow generalizes to a second species, zero code changes.** Fatty-
 
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
 - **[demo/video_script.md](demo/video_script.md)** — the ≤3:00 demo-video **script** (story + shot list + how to capture, in one doc).
-- **[SUBMISSION.md](SUBMISSION.md)** — hackathon deliverables tracker.
 
 ## Acknowledgements
 

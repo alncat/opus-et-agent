@@ -209,7 +209,7 @@ under narration. Everything heavy already ran; you're re-driving only the cheap 
 **Assemble & finish**
 - Cut the two live gates as the spine; drop the b-roll around them; lay the narration under (draft in [`captions.srt`](captions.srt) — re-voice in your own words).
 - Watch once: **≤ 3:00**, audio clean, no cluster credentials/usernames visible in the terminal captures.
-- Export; link it in [`SUBMISSION.md`](../SUBMISSION.md) → Deliverable 2.
+- Export; add the final video link to your hackathon submission.
 - Re-take anytime: restore snapshot → fresh session → repeat (replay mode never submits; state is snapshot-reversible).
 
 ---
