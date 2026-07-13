@@ -103,7 +103,10 @@ Try to determine frame type automatically before asking (see Frame Type below).
     Run 8c twice, once per subset, with `FIXED_SUBSET_LABEL=1` and `FIXED_SUBSET_LABEL=2`.
     If the particles were symmetry-expanded (e.g. D3 FAS), de-expand **first** with
     `dsdsh convert_star sel.star <OUTPUT_ANGPIX> --remove-symexp` (one row per `rlnImageName`),
-    or the two halves each carry symmetry copies of the same particle and the FSC is inflated
+    or the two halves each carry symmetry copies of the same particle and the FSC is inflated.
+    You **can** then re-symmetry-expand each *already-disjoint* subset for fixed-mode training
+    (`relion_particle_symmetry_expand` on `sel_subset1.star` and `sel_subset2.star` **separately**,
+    never the pre-split star) → a symmetrized half-map while the two halves stay independent
     (see [references/workflow.md](references/workflow.md) §8.6).
 
 ### Environment Paths
