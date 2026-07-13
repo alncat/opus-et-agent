@@ -98,16 +98,31 @@ FAILED=0
 for star_file in "${STAR_FILES[@]}"; do
     base_name=$(basename "$star_file" .star)
 
-    # Extract tilt series name: handles TS_XXX and Position_X style names.
-    # Pattern matches the leading "<letters>_<digits>" prefix before any further "_" separator.
-    if [[ "$base_name" =~ ^([A-Za-z]+_[0-9]+) ]]; then
-        ts_name="${BASH_REMATCH[1]}"
-    else
-        echo "WARNING: Could not extract tilt series name from $base_name"
-        echo "  Expected format: TS_XXX_* or Position_X_* (leading <word>_<number>)"
-        ((FAILED++))
-        echo ""
-        continue
+    # The tilt-series name stamped into the STAR must equal a real <ts>.tomostar
+    # basename — WARP ts_export_particles matches particles to tilt series by that
+    # name. In this skill's pipeline base_name already IS that name for ANY naming
+    # convention (TS_034, Position_1, tomo01, L1G1_ts_001, a bare 01, ...), so the
+    # exact-match fast path keeps it verbatim. Do NOT split the name on "_" — that
+    # corrupts every name that legitimately contains "_". For externally-organized
+    # PyTom jobs whose star carries extra segments (e.g. Position_2_Position_2_ali),
+    # recover the real name as the longest tomostar basename that prefixes base_name
+    # on a "_" boundary.
+    ts_name="$base_name"
+    if [ ! -f "${TOMOSTAR_DIR}/${base_name}.tomostar" ]; then
+        best=""
+        while IFS= read -r ts_path; do
+            cand=$(basename "$ts_path" .tomostar)
+            if [[ "$base_name" == "${cand}_"* ]] && [ "${#cand}" -gt "${#best}" ]; then
+                best="$cand"
+            fi
+        done < <(find "$TOMOSTAR_DIR" -name '*.tomostar' -type f 2>/dev/null)
+        if [ -n "$best" ]; then
+            ts_name="$best"
+        else
+            echo "  NOTE: '$base_name' is not a <ts>.tomostar basename and no tomostar"
+            echo "        prefixes it; stamping '$base_name' verbatim. If WARP export finds"
+            echo "        no particles for this series, rename it to the tilt-series name."
+        fi
     fi
 
     # dsdsh convert_pytom creates output in current directory as <ts_name>_norm.star

@@ -117,10 +117,25 @@ Format: `" x_start,y_start,z_start,x_dim,y_dim,z_dim "` (leading + trailing spac
   mv "${ts_name}_norm.star" "${ts_name}_warp.star"
   ```
 
-### Extracting tilt series names — exact prefix match
-- Names like `Position_2_Position_2_ali.star` need careful extraction
-- **Wrong**: `sed 's/_.*$//'` → gives `Position` (loses the number)
-- **Correct**: `grep -oP '^[A-Za-z]+_[0-9]+'` → gives `Position_2`
+### Extracting tilt series names — anchor to the tomostar list, never parse
+The tilt-series name stamped into a STAR **must equal a real `<ts>.tomostar`
+basename** — WARP `ts_export_particles` matches particles to tilt series by that
+name. So *derive it by matching against the tomostar list, never by parsing the
+string*:
+- **Wrong**: `sed 's/_.*$//'` → `Position` (loses the number).
+- **Wrong**: `grep -oP '^[A-Za-z]+_[0-9]+'` → assumes a `<letters>_<digits>` name.
+  This **silently breaks** every other convention: `tomo01`, a bare `01`,
+  `L1G1_ts_001` (letter immediately before a digit), and `24jan05a_grid2_0007`
+  (leading digit) all fail to match → the series is dropped; a name with extra
+  segments like `Position_1_2` is truncated to `Position_1` → particles are lost
+  at export.
+- **Correct**: in this skill's pipeline the star basename **already is** the exact
+  tomostar name (`gen_tm_jobs_aretomo.slurm` names each TM job dir the bare
+  `basename <ts>.tomostar`, which flows through `<ts>_particles.xml` → `<ts>.star`),
+  so use it verbatim. For externally-organized PyTom jobs whose star carries extra
+  segments (e.g. `Position_2_Position_2_ali`), recover the real name as the longest
+  tomostar basename that prefixes it on a `_` boundary. See the resolution loop in
+  `convert_pytom_to_warp.slurm` (exact-match fast path + tomostar-prefix fallback).
 
 ### File overwriting in multi-step conversions
 - `convert.py` and `dsdsh` may not overwrite existing files cleanly
