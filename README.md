@@ -60,7 +60,7 @@ The agent runs the judgment-support work; the human holds the decision.
 2. **Gate 2 — picks QC** — template-matching picks scored + overlaid; runs on **two species**
    (ribosome and FAS) from one reconstruction set.
 3. **Gate 3 — state selection** — OPUS-ET latent states judged by four converging, mostly
-   template-free signals (the sharpest maps are the ones a naive template score ranks worst).
+   template-free signals.
 4. **Gate 4 — resolution** — gold-standard half-map FSC with the phase-randomization correction,
    plus a **mask–density overlay** that *shows* the mask wraps the molecule without clipping.
 5. **Gate 5 — joint M refinement** — both species in one M population; multi-particle refinement
