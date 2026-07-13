@@ -326,6 +326,35 @@ Required flags for OPUS-ET compatibility:
 - `--output_ctf_csv` - Outputs CTF parameters
 - `--dont_correct_ctf_3d` - OPUS-ET handles CTF correction
 
+> **⚠ DANGER — the subtomo folder is shared and overwritten in place.**
+> `ts_export_particles` writes the per-particle subtomograms to a **fixed** path under the
+> tilt-series processing folder — `warp_tiltseries/subtomo/TS_XXX/TS_XXX_<index>_<OUTPUT_ANGPIX>A.mrc`
+> (plus a `*_ctf_*.mrc` per particle) — chosen from the `--settings` file, **not** from `--output_star`.
+> The filename encodes only the tilt-series name, the per-TS particle index (from 0), and the
+> pixel-size suffix; it does **not** encode the species/`TM_LABEL` or the box size. A different
+> `--output_star` gives you a separate STAR that still points back into the *same* shared
+> `subtomo/` tree — it does **not** give you a separate set of density files. Every re-export
+> therefore overwrites what is on disk. Three silent-corruption traps:
+>
+> 1. **Second species at the same `OUTPUT_ANGPIX`.** Exporting FAS at the ribo pixel size drops
+>    `TS_XXX_00000_<angpix>A.mrc …` on top of the ribosome subtomos; the ribo STAR now points at
+>    FAS densities. No error is raised.
+> 2. **Re-export with a different box, same `OUTPUT_ANGPIX`.** The box size is not in the filename,
+>    so the new box silently replaces the old `.mrc` and the old STAR's `rlnImageName` now resolves
+>    to a differently-sized box.
+> 3. **`warp_m_export.slurm`** re-exports M-refined particles into the same tree, clobbering the
+>    Phase-7 export for that species.
+>
+> **Mitigation — give each species (and each incompatible export) its own subtomo tree.** After an
+> export completes, rename `warp_tiltseries/subtomo/` → `warp_tiltseries/subtomo_<label>/`
+> (e.g. `subtomo_ribo`, `subtomo_fas`) and update that species' `DATADIR` **and** the STAR's
+> `rlnImageName` prefix (`subtomo/…` → `subtomo_<label>/…`) to match, *before* the next export.
+> This is exactly why `DATADIR` is per-species (SKILL.md item 22). The clean-but-heavy alternative
+> is a separate `--settings`/processing folder per species. Varying only `OUTPUT_ANGPIX` is **not** a
+> safe separator on its own — the files coexist under different suffixes, but you double the disk and
+> the isolation is accidental. Before any re-export, confirm you actually intend to replace what is on
+> disk, or you will silently orphan a STAR.
+
 ### 7.2 Prepare OPUS-ET Input
 The training scripts auto-generate the pose pickle from the export STAR. Manual form:
 ```bash
