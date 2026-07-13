@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="assets/claude_scientist.png" width="150" alt="Pixel-art Claude in a lab coat and goggles at the bench — Claude Code, the conductor of this pipeline"><br>
+  <sub><em>Claude Code — your resident cryo-ET conductor, at the bench.</em></sub>
+</p>
+
 # OPUS-ET-AGENT — agentic cryo-ET pipeline
 
 A supervised-autonomy **conductor** (Claude Code) that drives the cryo-ET reconstruction
