@@ -107,6 +107,40 @@ echo "  Coordinate pixel size: $COORDS_ANGPIX A"
 echo ""
 
 # -----------------------------------------------------------------------------
+# Overwrite guard (see references/workflow.md §7.1)
+# ts_export_particles writes to a FIXED subtomo tree — PROCESSING_DIR/subtomo —
+# keyed by --settings, NOT --output_star. Files are named
+# TS_XXX_<index>_<OUTPUT_ANGPIX>A.mrc (no species or box in the name), so a
+# second species / different box / re-export at the same OUTPUT_ANGPIX silently
+# overwrites the previous particles and orphans the STAR that pointed at them.
+# -----------------------------------------------------------------------------
+SUBTOMO_DIR="${PROCESSING_DIR:-$WORK_DIR/warp_tiltseries}/subtomo"
+EXISTING_SUBTOMO=$(find "$SUBTOMO_DIR" -name '*.mrc' -print -quit 2>/dev/null)
+if [ -n "$EXISTING_SUBTOMO" ]; then
+    echo "############################################################"
+    echo "WARNING: subtomograms already exist in the export target:"
+    echo "    $SUBTOMO_DIR"
+    echo "    e.g. $EXISTING_SUBTOMO"
+    echo ""
+    echo "  This export writes TS_XXX_<index>_${OUTPUT_ANGPIX}A.mrc into the SAME"
+    echo "  folder (fixed by --settings, not --output_star). Any existing particle"
+    echo "  at the same index + OUTPUT_ANGPIX will be OVERWRITTEN, silently"
+    echo "  orphaning the STAR that referenced it."
+    echo ""
+    echo "  If these belong to another species/box you want to keep, abort and"
+    echo "  rename the folder first, then repoint DATADIR + the STAR rlnImageName"
+    echo "  prefix to match (SKILL.md item 22):"
+    echo "      mv \"$SUBTOMO_DIR\" \"${SUBTOMO_DIR}_<label>\""
+    echo "############################################################"
+    if [ "${ABORT_ON_EXISTING_SUBTOMO:-0}" = "1" ]; then
+        echo "ERROR: ABORT_ON_EXISTING_SUBTOMO=1 set — refusing to overwrite. Exiting without exporting."
+        exit 1
+    fi
+    echo "  Proceeding anyway (non-fatal). Set ABORT_ON_EXISTING_SUBTOMO=1 to stop instead."
+    echo ""
+fi
+
+# -----------------------------------------------------------------------------
 # Run Export Particles
 # -----------------------------------------------------------------------------
 
