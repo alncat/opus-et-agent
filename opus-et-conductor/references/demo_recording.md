@@ -27,13 +27,12 @@ Do the recording in a **new Claude Code session**, not a continuation of a worki
 is complete, Gate-3 re-selection (k17/18/19) + Gate-4 fixed-mode/FSC are final, and the joint
 two-species M refinement has **converged** (FAS 13.88 Å, ribosome 7.76 Å) with the in-cell
 ArtiaX finale + M-refined map showcase rendered (`demo/qc/finale/`). So the recorded states and
-numbers now match the final data for every gate. Narrative/scene order:
-[`demo/video_script.md`](../../demo/video_script.md) (the ≤3:00 gate-driven script + shot list).
+numbers now match the final data for every gate. (The ≤3:00 gate-driven scene order + shot
+list are kept as local production notes, outside the repo.)
 
 **Beats beyond the live gates** — the video's non-gate beats are the opening **hand-off**
 (Scene 0, a live terminal capture) and the **results / finale b-roll** (Scene 5): the M-refined
-maps and the in-cell molecular-sociology render, cut in under narration. See
-[`demo/video_script.md`](../../demo/video_script.md) for the full gate-driven shot list.
+maps and the in-cell molecular-sociology render, cut in under narration.
 
 ## Replay mode — the one behavioral change (guardrail)
 When recording, run the conductor in **replay mode**. Set `demo_replay: true` in

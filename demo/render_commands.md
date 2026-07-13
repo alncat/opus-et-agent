@@ -3,7 +3,7 @@
 Two shots in the video are **ChimeraX renders, not Claude Code screen-recordings**: the
 **3D state-gallery spin** (Scene 4 b-roll) and the **in-cell ArtiaX finale** (Scene 5). Render
 each to a still + short movie, then cut them into the edit. Both read outputs from the **58k
-expanded run** — regenerate after the run settles (see [`refresh_manifest.md`](refresh_manifest.md)).
+expanded run** — regenerate after the run settles.
 
 **Render in GUI mode — it's the only reliable path.** The **state-gallery spin** (§A) and the
 plain-ChimeraX **map showcases** (§B2) are plain ChimeraX and render simplest in a local GUI

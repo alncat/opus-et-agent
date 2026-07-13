@@ -128,7 +128,7 @@ done
 
 > *"I have a cryo-ET dataset to process end-to-end, on my `<cluster>` cluster; frames + acquisition MDOCs are under `<DATA_DIR>`. Use the OPUS-ET conductor: preflight the toolchain, auto-detect the acquisition parameters, write and validate `pipeline.conf`, and begin the pipeline — pausing at each scientific checkpoint for my sign-off."*
 
-Progress lives in `.opus_run_state.json`, so a fresh Claude Code session resumes from disk, not from chat history. The full per-gate walkthrough — with the exact prompts for each checkpoint — is in [`demo/video_script.md`](demo/video_script.md).
+Progress lives in `.opus_run_state.json`, so a fresh Claude Code session resumes from disk, not from chat history. The per-gate record runbook — with the exact prompt for each checkpoint — is in [`opus-et-conductor/references/demo_recording.md`](opus-et-conductor/references/demo_recording.md).
 
 **Try it without a cluster.** The QC / analysis / viz tools are plain Python and test-covered — run the suite and browse the results bundle:
 
@@ -162,7 +162,6 @@ The **same workflow generalizes to a second species, zero code changes.** Fatty-
 </p>
 
 - **[demo/README.md](demo/README.md)** — the curated results bundle (Gates 1–5), figure by figure.
-- **[demo/video_script.md](demo/video_script.md)** — the ≤3:00 demo-video **script** (story + shot list + how to capture, in one doc).
 
 ## Future directions
 
