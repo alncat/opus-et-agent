@@ -16,6 +16,11 @@ software — **WARP/M**, **AreTomo2**, **PyTOM**, **OPUS-ET**, **ChimeraX**, and
   <sub><em>The payoff — every ribosome (blue) and fatty-acid synthase (gold) placed back at its pose inside one real cell: <b>molecular sociology</b>, read straight off the data.&nbsp; ▶ <a href="demo/README.md#gate5">watch it rotate</a></em></sub>
 </p>
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=Kf_MkRYBOCo"><img src="https://img.youtube.com/vi/Kf_MkRYBOCo/maxresdefault.jpg" width="860" alt="Watch the OPUS-ET-AGENT demo walkthrough on YouTube"></a><br>
+  <sub><em>▶ <a href="https://www.youtube.com/watch?v=Kf_MkRYBOCo"><b>Watch the demo walkthrough</b></a> — Claude Code drives the full cryo-ET pipeline end-to-end, pausing at each human gate for sign-off.</em></sub>
+</p>
+
 ## The task — and why it matters
 
 **Cryo-electron tomography (cryo-ET)** is the only technique that resolves macromolecules at
