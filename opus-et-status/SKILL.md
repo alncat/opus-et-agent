@@ -15,7 +15,6 @@ tails, and a narrow typed config editor.
 python3 opus-et-status/scripts/status_server.py \
     --host <CLUSTER_HOST> \
     --work-dir <RUN_DIR> \
-    --species-conf species_ribo.conf \
     --port 8080
 ```
 
@@ -25,6 +24,9 @@ Then open <http://127.0.0.1:8080>.
   (`ssh <CLUSTER_HOST> true` must succeed without a password prompt; the client
   uses `BatchMode=yes`).
 - `--work-dir` is the run directory on the cluster.
+- `--species-conf` defaults to `species.conf`; pass it only to start on a
+  different one. Naming a conf that is not there is not fatal -- the Config tab
+  says which file it could not read and every other panel still fills.
 - One run per instance. To watch a second run, start another instance on a
   different `--port`; the header names the host and run directory each one
   watches.

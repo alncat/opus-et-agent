@@ -72,6 +72,7 @@ The agent runs the judgment-support work; the human holds the decision.
 - **opus-et-analysis** — interpretation + QC tools (mask/FSC, k-means states, map consistency, pose parsing).
 - **opus-et-conductor** — orchestration brain: run-state, checkpoints, monitor/diagnose loop.
 - **opus-et-visualize** — in-cell ChimeraX/ArtiaX scenes (each map placed at every pose, colored by state/species).
+- **opus-et-status** — local web dashboard: what is running, what failed, what is waiting on you.
 
 ## Architecture
 
@@ -99,6 +100,7 @@ flowchart LR
     end
 
     CLUSTER[("HPC cluster<br/>SLURM · GPU")]
+    STATUS["opus-et-status<br/>local dashboard · polls over SSH"]
 
     H -->|"dataset + intent"| COND
     COND ==>|"gate: keep / choose?"| H
@@ -108,6 +110,8 @@ flowchart LR
     CLUSTER -->|"tomograms, maps, metadata"| TOOLS
     TOOLS -->|QC evidence| COND
     TOOLS -->|molecules back in the cell| H
+    CLUSTER -.->|"job state · QC images · metadata"| STATUS
+    STATUS -.->|"what is running, what is blocked"| H
 
     style H fill:#ffe8cc,stroke:#e8590c,stroke-width:4px,font-size:18px
 ```
@@ -116,20 +120,20 @@ flowchart LR
 
 ## Getting started
 
-**What this is.** OPUS-ET-AGENT is four [Claude Code](https://code.claude.com/docs) **Agent Skills** — not a standalone program. The "app" is Claude Code itself: you describe your dataset in plain language, and Claude Code, driving these skills, runs the pipeline and pauses at each gate for your sign-off. `opus-et-conductor` orchestrates the other three (`opus-et-warp`, `opus-et-analysis`, `opus-et-visualize`).
+**What this is.** OPUS-ET-AGENT is five [Claude Code](https://code.claude.com/docs) **Agent Skills** — not a standalone program. The "app" is Claude Code itself: you describe your dataset in plain language, and Claude Code, driving these skills, runs the pipeline and pauses at each gate for your sign-off. `opus-et-conductor` orchestrates the three tool-layer skills (`opus-et-warp`, `opus-et-analysis`, `opus-et-visualize`); `opus-et-status` is a read-mostly dashboard you or the conductor can launch alongside a run.
 
 **Prerequisites**
 - [**Claude Code**](https://code.claude.com/docs) — the agent that runs the skills.
 - **For a real run** — an HPC cluster (SLURM + GPUs) with the cryo-ET toolchain the skills drive: **WARP** (the [`alncat` fork](https://github.com/alncat/warp), required for `--dont_correct_ctf_3d` / `--output_ctf_csv`), **AreTomo2**, **PyTOM**, **OPUS-ET** (`dsdsh`), and **M** (`MTools` / `MCore`), each in its conda env. The conductor's preflight probes for these and reports whatever is missing — it does not install them.
 - **For the in-cell finale** — a local **ChimeraX 1.10 + ArtiaX 0.7.0** desktop (the render runs locally, not on the cluster).
 
-**Install the skills.** Clone the repo and make the four skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy each in:
+**Install the skills.** Clone the repo and make the five skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy each in:
 
 ```bash
 git clone https://github.com/alncat/opus-et-agent.git
 cd opus-et-agent
 mkdir -p .claude/skills
-for s in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize; do
+for s in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize opus-et-status; do
   ln -s "../../$s" ".claude/skills/$s"   # or: cp -r "$s" ".claude/skills/$s"
 done
 ```
@@ -140,11 +144,28 @@ done
 
 Progress lives in `.opus_run_state.json`, so a fresh Claude Code session resumes from disk, not from chat history. The per-gate record runbook — with the exact prompt for each checkpoint — is in [`opus-et-conductor/references/demo_recording.md`](opus-et-conductor/references/demo_recording.md).
 
+**Watch the run in a browser.** A pipeline run is hours of SLURM jobs, so `opus-et-status` puts the run's state on one page. It is stdlib-only Python — nothing to install, and nothing left running on the cluster:
+
+```bash
+python3 opus-et-status/scripts/status_server.py \
+    --host <CLUSTER_HOST> --work-dir <RUN_DIR> --port 8080
+```
+
+Then open <http://127.0.0.1:8080>. `--host` is any SSH alias that already works without a password prompt; `--work-dir` is the run directory on the cluster. Where `python3` is not on `PATH` in a non-interactive shell, pass the environment prelude:
+
+```bash
+--remote-init 'source ~/.bashrc && conda activate <env>'
+```
+
+Nine tabs, in pipeline order: **Run** (gates, phases, SLURM jobs, log tails), **Frames** (per-movie CTF quality, dose, tilt-series alignment), **Dataset**, **Visual QC** (browse the QC images, or render new slices and pick overlays on demand), **Training**, **Inventory** (template-matching scores and the particle funnel), **Refinement** (gold-standard FSC), **Config** (allowlisted, type-checked edits to the tuning knobs) and **Runs**.
+
+Everything shown is read from what the pipeline already wrote — WARP's `processed_items.json`, PyTOM's particle XML, the acquisition MDOCs, AreTomo's `.aln` files and the run's own `logs/` — so it re-runs none of the toolchain and needs nothing installed on the login node. The server binds `127.0.0.1` and has **no authentication**: keep it local.
+
 **Try it without a cluster.** The QC / analysis / viz tools are plain Python and test-covered — run the suite and browse the results bundle:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/pytest          # 187 tests, all green
+.venv/bin/pytest          # 516 tests, all green
 ```
 
 [`demo/README.md`](demo/README.md) tells the figure-by-figure scientific story.
