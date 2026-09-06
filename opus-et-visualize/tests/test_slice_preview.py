@@ -44,3 +44,23 @@ def test_preview_mrc_writes_two_pngs(tmp_path):
     outs = sp.preview_mrc(str(p), str(tmp_path / "prev"))
     assert len(outs) == 2
     assert all(Path(o).exists() and Path(o).stat().st_size > 0 for o in outs)
+
+
+def test_central_slices_defaults_to_the_middle():
+    vol = np.arange(5 * 4 * 3, dtype=np.float32).reshape(5, 4, 3)
+    xy, xz = sp.central_slices(vol)
+    assert np.array_equal(xy, vol[2])        # nz // 2
+    assert np.array_equal(xz, vol[:, 2, :])  # ny // 2
+
+
+def test_central_slices_honours_an_explicit_z_and_y():
+    vol = np.arange(5 * 4 * 3, dtype=np.float32).reshape(5, 4, 3)
+    xy, xz = sp.central_slices(vol, z=0, y=3)
+    assert np.array_equal(xy, vol[0])
+    assert np.array_equal(xz, vol[:, 3, :])
+
+
+def test_out_of_range_indices_are_clamped_not_fatal():
+    vol = np.zeros((5, 4, 3), dtype=np.float32)
+    xy, xz = sp.central_slices(vol, z=999, y=-7)
+    assert xy.shape == (4, 3) and xz.shape == (5, 3)
