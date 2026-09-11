@@ -33,7 +33,7 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 
 For `warp_m_update_mask.slurm` and `warp_m_export.slurm`, `SPECIES_BASE` may be either the original species base name or the full hashed folder name. If `m/species/<species>_*` matches multiple folders, use the full folder name, e.g. `SPECIES_BASE="ribosome_1199b7f2"`, so one species is selected unambiguously.
 
-**All scripts** source `pipeline.conf` (and `species.conf` for Phase 6+). Fill the config files — not individual scripts. Run `validate.sh` before submitting to catch any remaining placeholders or path issues.
+**All scripts** source `pipeline.conf` (and `species.conf` for Phase 6+) — defined in `references/configuration.md`. Fill the config files — not individual scripts. Run `validate.sh` before submitting to catch any remaining placeholders or path issues.
 
 **Cluster-specific SLURM directives (also do this for every script).** Scripts
 ship with generic `--partition`, `--gres`, and `--time` defaults. Before the

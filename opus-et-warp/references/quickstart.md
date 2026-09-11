@@ -14,32 +14,7 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 All variables are defined in `pipeline.example.conf` and `species.example.conf` — those files are the canonical reference. Copy them to `.conf`, edit, then run `validate.sh` to check them. Derived values (`ALIGN_ANGPIX`, directory paths, etc.) are computed automatically when the configs are sourced.
 
 ### Configuration (pipeline.conf + species.conf)
-
-**Two config files** — copy from examples, then edit:
-
-```bash
-cp pipeline.example.conf pipeline.conf
-cp species.example.conf species.conf
-vim pipeline.conf    # tilt-series-wide: paths, microscope, detector, cluster, binning
-vim species.conf     # per-species: TM_LABEL, DIAMETER, box sizes, training params
-```
-
-`pipeline.conf` is shared by all species. `species.conf` is per-species — keep separate copies for different species (e.g. `species_ribo.conf`, `species_26s.conf`). Override via `SPECIES_CONF=species_26s.conf sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/...`. 
-
-**SLURM copies scripts to a temp directory, so `$0` is not the original path.** Always submit with `SKILL_DIR` so scripts can find their config files:
-
-```bash
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_frameseries_import.slurm
-```
-
-In scripts, `SCRIPT_DIR` falls back to `$0` if `SKILL_DIR` is unset:
-
-```bash
-SCRIPT_DIR="${SKILL_DIR:-$(cd "$(dirname "$0")" && pwd)}"
-source "${SCRIPT_DIR}/pipeline.conf" 2>/dev/null || { echo "ERROR: pipeline.conf not found..."; exit 1; }
-SPECIES_CONF="${SPECIES_CONF:-${SCRIPT_DIR}/species.conf}"
-source "$SPECIES_CONF" 2>/dev/null || { echo "ERROR: $SPECIES_CONF not found..."; exit 1; }
-```
+Defined once, in `references/configuration.md` -- the two-file convention, `SKILL_DIR`, and the `SPECIES_CONF` override.
 
 ### Pre-flight Validation (validate.sh)
 

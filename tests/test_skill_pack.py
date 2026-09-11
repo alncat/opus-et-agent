@@ -125,3 +125,33 @@ def test_references_named_by_the_skill_exist(skill):
     _, body = _frontmatter(skill)
     for ref in set(re.findall(r"references/[A-Za-z0-9_.-]+\.md", body)):
         assert (ROOT / skill / ref).exists(), f"{skill}: {ref} does not exist"
+
+
+# pipeline.conf / species.conf is a convention four skills depend on. It gets
+# one home; everything that restates it points there, so the restatements
+# cannot drift from the definition.
+CONF_HOME = "opus-et-warp/references/configuration.md"
+CONF_RESTATERS = {
+    "opus-et-warp/SKILL.md": "references/configuration.md",
+    "opus-et-warp/references/scripts.md": "references/configuration.md",
+    "opus-et-status/SKILL.md": CONF_HOME,
+    "opus-et-conductor/references/gate_protocols.md": CONF_HOME,
+}
+
+
+def test_conf_convention_has_one_home():
+    home = ROOT / CONF_HOME
+    assert home.exists(), f"{CONF_HOME} missing"
+    text = home.read_text()
+    # the facts a reader needs, all in the one file
+    for fact in ('SKILL_DIR="$(pwd)"', "SPECIES_CONF=", 'SCRIPT_DIR="${SKILL_DIR:-',
+                 "pipeline.example.conf", "species.example.conf"):
+        assert fact in text, f"{CONF_HOME} lacks {fact!r}"
+
+
+@pytest.mark.parametrize("path,pointer", CONF_RESTATERS.items(),
+                         ids=list(CONF_RESTATERS))
+def test_every_restatement_points_at_the_home(path, pointer):
+    text = (ROOT / path).read_text()
+    assert "pipeline.conf" in text and "species.conf" in text, "probe is stale"
+    assert pointer in text, f"{path} restates the conf split without citing {pointer}"

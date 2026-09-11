@@ -58,7 +58,7 @@ One row per script: what it does, which phase, memory. Scripts source both confs
 | `scripts/manifest.yml` | Machine-readable phase map — scripts, vars, tools, outputs per phase |
 | `validate.sh` | Phase-aware pre-flight check, species-selectable |
 
-**Setup:** `cp pipeline.example.conf pipeline.conf && cp species.example.conf species.conf`, then edit both. Scripts exit with a clear error if the real `.conf` file is missing.
+**Setup:** `cp pipeline.example.conf pipeline.conf && cp species.example.conf species.conf`, then edit both. Scripts exit with a clear error if the real `.conf` file is missing. The two-file convention, `SKILL_DIR`, and the `SPECIES_CONF` override are defined once, in `references/configuration.md`.
 
 ## File Organization
 The run-directory layout each phase writes into (`warp_frameseries/`, `warp_tiltseries/`, `template_matching/<label>/`, `opuset/`, `m/`) and what to expect in each. Full text: `references/scripts.md`.

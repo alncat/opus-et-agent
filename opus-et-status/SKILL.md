@@ -65,7 +65,8 @@ run: a new conf is sourced by nothing.
 
 Only the keys in [references/config_keys.md](references/config_keys.md) are
 editable. Each key declares its file: species keys go to the conf chosen by
-`--species-conf`, processing keys go to `pipeline.conf`. Acquisition facts
+`--species-conf`, processing keys go to `pipeline.conf` (what each file holds is defined once, in
+`opus-et-warp/references/configuration.md`). Acquisition facts
 (`ANGPIX`, `EXPOSURE`, dims) and all paths are **read-only** — they describe the
 data, so changing them would invalidate work already done rather than
 reconfigure it. `BINNING_FACTOR` is editable but load-bearing and requires an

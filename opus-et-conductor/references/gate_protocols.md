@@ -5,7 +5,7 @@ decides, and what is written back to config + `.opus_run_state.json`.
 
 ## Gate 0 — Setup (before Phase 1)
 - Prepare: auto-detect frame type (extension + MRC Z-dim), pixel size (mdoc/header),
-  tomo dims; fill `pipeline.conf` + `species.conf`.
+  tomo dims; fill `pipeline.conf` + `species.conf` (defined in `opus-et-warp/references/configuration.md`).
 - Decide: confirm/correct acquisition params.
 - Persist: `checkpoints[] {gate:"setup", params_set:{...}}`.
 
