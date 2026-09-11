@@ -123,8 +123,13 @@ def test_skill_body_fits_the_ceiling(skill):
 @pytest.mark.parametrize("skill", SKILLS)
 def test_references_named_by_the_skill_exist(skill):
     _, body = _frontmatter(skill)
-    for ref in set(re.findall(r"references/[A-Za-z0-9_.-]+\.md", body)):
-        assert (ROOT / skill / ref).exists(), f"{skill}: {ref} does not exist"
+    # A bare `references/x.md` belongs to this skill; `opus-et-warp/references/x.md`
+    # names another skill's file and is checked there. Cross-skill pointers are
+    # the ones that rot, so they are validated rather than skipped.
+    for owner, ref in set(re.findall(
+            r"(opus-et-[a-z]+/)?(references/[A-Za-z0-9_.-]+\.md)", body)):
+        root = ROOT / owner.rstrip("/") if owner else ROOT / skill
+        assert (root / ref).exists(), f"{skill}: {owner}{ref} does not exist"
 
 
 # pipeline.conf / species.conf is a convention four skills depend on. It gets
