@@ -1,6 +1,6 @@
 ---
 name: opus-et-status
-description: "Local web dashboard for a running cryo-ET pipeline. Use when the user asks to check job status, see whether SLURM jobs are running or failed, view pipeline phase progress, find which human gate is blocking, read a failed job's log, or adjust a tuning knob in the species config. Polls the cluster over SSH from the local machine; nothing is installed or left running on the cluster."
+description: Use when the user asks what is running or failed on the cluster, whether a SLURM job finished, which phase or human gate the pipeline is at, to read a failed job's log, to browse QC images, to compare tilt series by CTF fit, dose or alignment, to see template-matching score distributions, or to change a tuning knob in species.conf without editing it by hand. Polls the cluster over SSH from the local machine.
 ---
 
 # OPUS-ET Status Server
@@ -50,22 +50,21 @@ Every per-tilt-series number is in one table, under **Frames**. Dataset keeps
 only the facts that describe the whole dataset.
 
 **The Jobs table is scoped to this run directory.** `squeue` and `sacct` are
-account-wide, and scoping matters more than it sounds: on the cluster this was
-built against, all fourteen running jobs belonged to other directories, so an
-unscoped panel described work with nothing to do with the run -- and rolled
-its GPUs into the run's GPU-hours. Two things do the scoping:
+account-wide, so an unscoped panel lists every job on the account -- from any
+directory, from projects with nothing to do with the run -- and rolls their
+GPUs into the run's GPU-hours. Two things do the scoping:
 
 - A **live** job is claimed by `squeue %Z`, the directory it was submitted
-  from, matching the run dir or anything under it. Not by job name: the same
-  cluster had an `analyze_opuset` job running in an unrelated directory. A
+  from, matching the run dir or anything under it. Not by job name: two runs
+  of this pipeline in two directories submit jobs with identical names. A
   job whose workdir is unknown (an older `squeue` without `%Z`) is never
   claimed -- showing nothing beats showing the whole account.
 - A **finished** job is claimed by the log SLURM wrote into this run's
   `logs/`, since `<name>_<jobid>.out` makes the directory listing a job list.
-  `sacct` is then queried for exactly those ids. This matters where `sacct`
-  has no accounting data at all -- it returns zero rows for every query on
-  this cluster -- and without the log listing the run's 58 finished jobs
-  would be invisible and their logs unreachable.
+  `sacct` is then queried for exactly those ids. This matters on clusters
+  where `sacct` has no accounting data and returns zero rows for every query:
+  without the log listing, every finished job would be invisible and its log
+  unreachable.
 
 A job known only from its log shows **no record** rather than an invented
 outcome; its log still opens. Jobs of yours running elsewhere are counted in
@@ -216,15 +215,15 @@ Scores are binned on the cluster over the fixed [0, 1] domain of a correlation
 coefficient, so no range scan is needed and 100 counts cross the wire instead
 of thousands of floats per tilt series.
 
-The bars are **log-scaled**, because the counts span four orders of magnitude
-(9305 at the noise peak against 1 in the tail) and the tail is where the real
-particles are. The green curve is the cumulative count at or above each score,
+The bars are **log-scaled**, because the counts span orders of magnitude
+(thousands at the noise peak against single digits in the tail) and the tail
+is where the real particles are. The green curve is the cumulative count at or above each score,
 which answers the actual question -- cut here, keep how many? -- without
 needing the conf.
 
 Each series reports whether it hit `extractCandidates --numberCandidates`,
-read from the extraction log rather than guessed from round counts: this run
-used 600, 800, 5000, 6000 and 8000 for different series. When a particle file
+read from the extraction log rather than guessed from round counts -- the cap
+is set per series and need not be one number everywhere. When a particle file
 holds *more* particles than its log claims, the log is stale (PyTOM re-run
 without rewriting it) and the cap is reported as unknown rather than wrong.
 
@@ -288,9 +287,9 @@ species, which is the axis that actually splits the overlays.
 
 The species filter is **strict about what the filenames claim**. A slice has
 no species and is never filtered out by one. An overlay whose filename carries
-no species — 120 of them in this run are plain `TS_026_slab142_all.png` — is
-matched only by an explicit **unlabelled** chip, never by `ribo`, which would
-be an attribution nothing on disk supports. The section says how many are
+no species (a plain `<ts>_slab<N>_<variant>.png` with no species prefix) is
+matched only by an explicit **unlabelled** chip, never by a species name, which
+would be an attribution nothing on disk supports. The section says how many are
 unattributed and that re-rendering produces labelled copies.
 
 Only the discovered listing is servable: `/api/qc/image?path=…` matches the

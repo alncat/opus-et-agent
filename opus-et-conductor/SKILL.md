@@ -1,6 +1,6 @@
 ---
 name: opus-et-conductor
-description: Supervised-autonomy orchestrator for the cryo-ET pipeline. Drives opus-et-warp (reconstruction) and opus-et-analysis (interpretation) end-to-end over SLURM, tracking progress in .opus_run_state.json, pausing at scientific checkpoints, and generating in-cell visualizations via opus-et-visualize. Use when the user wants to run, monitor, resume, or checkpoint a full cryo-ET run rather than a single phase.
+description: Use when the user wants a full cryo-ET run driven end-to-end on a SLURM cluster rather than one phase: start or resume a run, see where it stopped, find which human gate is waiting on them, or approve a checkpoint. Also use when a work dir already holds .opus_run_state.json.
 ---
 
 # OPUS-ET Conductor
@@ -52,14 +52,20 @@ mask, since 8b auto-creates a default sphere):
    references/gate_protocols.md), wait, record the decision.
 3. `sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/<script>` with the cluster's
    partition/gres. Record job_id; set status running.
-4. Monitor squeue (background). On completion → verifying.
+4. Monitor squeue (background). On completion → verifying. For a run that will
+   span several phases, offer to launch the `opus-et-status` dashboard
+   (`python3 opus-et-status/scripts/status_server.py --host <alias> --work-dir $WORK_DIR`):
+   jobs, phases, open gates, log tails and QC images in a browser, scoped to this
+   run directory, nothing installed on the cluster. It is a viewer — the conductor
+   still owns `.opus_run_state.json`.
 5. Verify outputs via `validate.sh --json`. On failure, consult
    references/diagnose_catalog.md; auto-fix only known-and-safe cases, else escalate.
 6. Advance.
 
 ## Checkpoints
 Human gates: 0 setup, 1 alignment QC, `tm_params` TM-parameter selection (before Phase 6),
-2 picks QC, 3 state selection, 4 refine sign-off. See references/gate_protocols.md. Gates
+2 picks QC, 3 state selection, 4 refine sign-off. See references/gate_protocols.md; the
+`opus-et-status` Run tab shows which gate is open and what it is waiting on. Gates
 0/1/2/3/4 are implemented (Gate 1 runs a parallel slice-preview QC Workflow, one agent per
 tomogram; Gate 4 = half-map split + molecule mask + gold-standard FSC sign-off, via
 `train_opuset_fixed.slurm` / `gen_mask_from_map.py` / `compute_fsc.py`). M refinement after
@@ -116,4 +122,5 @@ references/
   diagnose_catalog.md  # known-failure catalog for self-correction
 tests/                 # pytest — test_preflight, test_run_state, test_run_state_derive, test_validate_json
 ```
-The phase scripts + `validate.sh` + `manifest.yml` live in the `opus-et-warp` skill, not here.
+The phase scripts + `validate.sh` + `manifest.yml` live in the `opus-et-warp` skill, not here;
+the browser dashboard is the `opus-et-status` skill.

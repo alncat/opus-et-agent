@@ -1,6 +1,6 @@
 ---
 name: opus-et-analysis
-description: Cryo-ET data processing and analysis workflows using opus-et training results. Handles PCA/kmeans clustering, volume generation from latent codes, pose parsing, and star file manipulation. Use when processing training results from a specific epoch, generating volumes for cluster centers or principal components, parsing poses, or combining star files from cryo-ET reconstructions.
+description: Use when the user has OPUS-ET training output and wants to interpret it: PCA or k-means over the latent codes of an epoch, volumes for cluster centres or principal components, per-state STAR files, pose parsing, the original pixel size, a training command for a new run, or a molecule mask and gold-standard FSC between half maps after Gate 3 or 4. Also use for state-vs-template and per-tomogram state-consistency checks.
 ---
 
 # opus-et Analysis

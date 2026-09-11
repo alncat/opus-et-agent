@@ -1,6 +1,6 @@
 ---
 name: opus-et-visualize
-description: Generate in-cell molecular visualizations for cryo-ET results. Two modes — (1) place a refined/averaged map at every particle pose inside its original tomogram in ChimeraX/ArtiaX, colored by OPUS-ET conformational state (the finale look); (2) REVEAL the raw density instead of replacing it — mark picks on the raw tomogram (per-particle zoomed gallery via particle_gallery.py, or slab overlays via tm_picks_overlay.py) with ring/transparent/solid markers, and scan the slice through Z. Use when the user wants molecules in cellular context, a hero in-cell render, or to show/validate that picks land on real raw density.
+description: Use when the user wants molecules shown in their cellular context: a refined map placed at every particle pose inside the original tomogram in ChimeraX/ArtiaX, coloured by conformational state or species, a hero in-cell render or movie, or picks marked on the raw tomogram density to check they land on real particles rather than ice or carbon. ChimeraX/ArtiaX runs on the local desktop, not the cluster.
 ---
 
 # OPUS-ET Visualize (in-cell scenes)
@@ -94,7 +94,7 @@ M1-stub commands like `artiax open particles` and `artiax attach ... geomodel`
   look deceptively clean — don't let that bias which state you pick.
 
 ## Usage
-**M1: `scripts/gen_artiax_scene.py` is a library, not a CLI (no `__main__`).**
+**`scripts/gen_artiax_scene.py` is a library, not a CLI (no `__main__`).**
 The conductor (or you) imports it and calls its functions directly — there is
 no `python scripts/gen_artiax_scene.py ...` invocation yet.
 
@@ -224,14 +224,6 @@ result) are a plain-ChimeraX `open map ; volume level <mean+4sd> ; surface dust
   matplotlib but NOT mrcfile; the repo `.venv` (3.14) has both. Extract crops with
   a python that has mrcfile, render figures with either. Verify an mp4 without
   ffmpeg via `qlmanage -t -s 1100 -o <dir> movie.mp4` (QuickLook thumbnail).
-
-## Status
-M1: scene generation + single-particle validation. ArtiaX command syntax is
-verified against ArtiaX 0.7.0 / ChimeraX 1.10 locally on the Mac (see recipe
-above); the cluster is only the source of the .mrc/.star inputs, not the
-render/verification host. Added this
-session: `particle_gallery.py` (raw-density marker galleries + BILD markers, 20
-tests), the cellular-context render aesthetic, and the scannable Z-scan reveal.
 
 ## Files in this skill
 ```

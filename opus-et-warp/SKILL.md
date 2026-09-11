@@ -1,6 +1,6 @@
 ---
 name: warp-opus-et
-description: "Cryo-ET data processing pipeline using WARP, AreTomo2, PyTOM, and OPUS-ET. Use this skill whenever the user is processing cryo-electron tomography (cryo-ET) data, including: importing frame series or tilt series from MDOC files, CTF estimation, AreTomo2 alignment, template matching with PyTOM, exporting subtomograms, or training OPUS-ET heterogeneity models. Also use when the user mentions tomostar files, WarpTools commands, tilt stacks (.st, .rawtlt), defocus handedness, ts_export_particles, or SLURM job submission for GPU tomography processing."
+description: Use when the user is processing cryo-ET data with WARP, AreTomo2, PyTOM or OPUS-ET: importing frame or tilt series from MDOCs, CTF estimation, tilt-series alignment, template matching, exporting subtomograms, M refinement, or training an OPUS-ET heterogeneity model. Also use on mentions of tomostar files, WarpTools, .st/.rawtlt stacks, defocus handedness, ts_export_particles, pipeline.conf or species.conf, or SLURM jobs for GPU tomography.
 ---
 
 # WARP/OPUS-ET Cryo-ET Processing Workflow
