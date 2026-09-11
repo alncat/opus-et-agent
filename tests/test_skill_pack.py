@@ -105,3 +105,23 @@ def test_status_skill_does_not_argue_from_one_dataset():
     for marker in ("fourteen", "58 finished", "600, 800, 5000", "9305",
                    "120 of them", "built against", "in this run"):
         assert marker not in body, f"opus-et-status: {marker!r}"
+
+
+# 500 words is the rubric's target for a general skill; these are
+# technology-specific and reference-heavy, so the pack's ceiling is 1200 --
+# an overview plus a quick reference, with anything heavier in references/.
+SKILL_BODY_CEILING = 1200
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_skill_body_fits_the_ceiling(skill):
+    _, body = _frontmatter(skill)
+    words = len(body.split())
+    assert words <= SKILL_BODY_CEILING, f"{skill}: {words} words"
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_references_named_by_the_skill_exist(skill):
+    _, body = _frontmatter(skill)
+    for ref in set(re.findall(r"references/[A-Za-z0-9_.-]+\.md", body)):
+        assert (ROOT / skill / ref).exists(), f"{skill}: {ref} does not exist"

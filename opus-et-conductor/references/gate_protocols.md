@@ -32,7 +32,7 @@ decides, and what is written back to config + `.opus_run_state.json`.
 
 ## Gate `tm_params` — TM parameter selection (before Phase 6)
 The *before-Phase-6* decision of which matching parameters to run — distinct from Gate 2's
-*after-Phase-6* score threshold.
+*after-Phase-6* score threshold. Design: `docs/superpowers/specs/2026-07-08-tm-auto-params-design.md`.
 - Prepare (mask — implemented): run `opus-et-warp/scripts/tm_auto_mask.py` on the
   **native-resolution** template → `mask_radius_angstrom` + radial-profile PNG. Set
   `MASK_RADIUS = round(mask_radius_angstrom / ALIGN_ANGPIX)` and `MASK_SIGMA` in
