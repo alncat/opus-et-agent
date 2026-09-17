@@ -73,21 +73,30 @@ QC_DIRS = ["qc", "gate1_qc", "gate2_qc", "gate3_qc", "gate4_qc", "qc_ondemand"]
 
 def qc_list_cmd(work_dir):
     dirs = " ".join(shlex.quote(d) for d in QC_DIRS)
+    # Nested folders are where this run keeps Gate 2 overlays
+    # (`qc/gate2_j360/`, `qc/j360_picks/`). A top-level glob missed them.
     script = (
         'cd "$1" || exit 0; for d in ' + dirs + '; do '
         '[ -d "$d" ] || continue; '
-        'for f in "$d"/*.png; do [ -e "$f" ] && echo "$f"; done; done'
+        'find "$d" -maxdepth 3 -type f -name "*.png" ! -path "*/.*" 2>/dev/null; '
+        'done'
     )
     return ["sh", "-c", script, "_", work_dir]
 
 
 def parse_qc_list(text):
-    """Relative paths only. Anything absolute or containing '..' is dropped:
-    this listing is the allowlist used to serve image bytes."""
+    """Relative paths only. Anything absolute, escaping, or outside the
+    known QC directories is dropped: this listing is the allowlist used to
+    serve image bytes."""
+    allowed = set(QC_DIRS)
     out = []
     for line in text.splitlines():
-        rel = line.strip()
+        rel = line.strip().lstrip("./")
         if not rel or rel.startswith("/") or ".." in rel.split("/"):
+            continue
+        if rel.split("/", 1)[0] not in allowed:
+            continue
+        if not rel.lower().endswith(".png"):
             continue
         out.append(rel)
     return out
@@ -95,7 +104,13 @@ def parse_qc_list(text):
 
 _SLICE_RE = re.compile(r"^(?P<stem>.+)_(?P<view>xy|xz)$", re.I)
 _HAND_RE = re.compile(r"^handedness[_-](?P<stem>.+)$", re.I)
-_SLAB_RE = re.compile(r"^(?P<stem>.+)_slab(?P<slab>\d+)_(?P<variant>all|topN)$", re.I)
+_SLAB_RE = re.compile(
+    r"^(?P<stem>.+?)(?:_overlay)?_slab(?P<slab>\d+)_(?P<variant>all|topN)$", re.I)
+_OVERLAY_RE = re.compile(r"^(?P<stem>.+)_overlay$", re.I)
+_MONTAGES_RE = re.compile(r"^(?P<stem>.+)_slabs$", re.I)
+# `gate2_qc` is a directory, not a species named "qc".
+_GATE_DIR_RE = re.compile(r"^gate(\d+)(?:_(?!qc$)(?P<sp>.+))?$", re.I)
+_NOISE_SUF = ("_overlay", "_picks", "_slabs")
 
 
 def _norm(name):
@@ -125,8 +140,8 @@ def _match_tomo(stem, known):
 
 
 # Generates missing thumbnails on the cluster and streams them back base64 in
-# ONE call. Full QC pngs are ~2 MB; a 240 px grey JPEG is ~1% of that, which is
-# what makes a thumbnail grid affordable over ssh.
+# ONE call. Full QC pngs are ~2 MB; a 280 px JPEG is ~1-2% of that. Colour is
+# kept so pick overlays stay pick overlays, not grey smudges.
 _THUMB_PY = r"""
 import base64, os, sys
 from PIL import Image
@@ -135,12 +150,14 @@ for line in sys.stdin:
     rel = line.strip()
     if not rel:
         continue
-    out = os.path.join("qc_thumbs", rel.replace("/", "__") + ".jpg")
+    out = os.path.join("qc_thumbs", rel.replace("/", "__") + ".280.jpg")
     if not os.path.exists(out):
         try:
             im = Image.open(rel)
-            im.thumbnail((240, 240))
-            im.convert("L").save(out, "JPEG", quality=75)
+            im.thumbnail((280, 280))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            im.save(out, "JPEG", quality=78)
         except Exception:
             continue
     try:
@@ -808,28 +825,112 @@ def resolve_derived(raw, values, depth=0):
     return None
 
 
+def qc_section(directory):
+    """Map a path's parent onto a pipeline check (qc / gate1_qc / ...).
+
+    Nested folders such as `qc/gate2_j360/` are Gate 2, not reconstruction.
+    """
+    parts = [p for p in (directory or "").split("/") if p]
+    if not parts:
+        return "qc"
+    top = parts[0]
+    if top in ("gate1_qc", "gate2_qc", "gate3_qc", "gate4_qc", "qc_ondemand"):
+        return top
+    for p in parts:
+        m = _GATE_DIR_RE.match(p)
+        if m:
+            return f"gate{int(m.group(1))}_qc"
+        if "pick" in p.lower():
+            return "gate2_qc"
+    return top if top in QC_DIRS else "qc"
+
+
+def _species_from_dir(directory):
+    for p in (directory or "").split("/"):
+        m = _GATE_DIR_RE.match(p)
+        if m and m.group("sp"):
+            return m.group("sp")
+        if p.lower().endswith("_picks") and len(p) > 6:
+            return p[:-6]
+    return None
+
+
+def _strip_noise(stem):
+    """Peel `_overlay` / `_top200` / `_slabs` off so the tomogram can match."""
+    s = stem
+    while True:
+        n = s
+        lower = s.lower()
+        for suf in _NOISE_SUF:
+            if lower.endswith(suf):
+                s = s[:-len(suf)]
+                lower = s.lower()
+        s2, nsub = re.subn(r"_top\d+$", "", s, flags=re.I)
+        s = s2
+        if s == n and nsub == 0:
+            return s
+
+
+def _humanize(stem):
+    s = stem
+    s = re.sub(r"all_ts", "all-series", s, flags=re.I)
+    s = re.sub(r"template_check", "template", s, flags=re.I)
+    s = re.sub(r"mask_coverage(?:_review)?", "mask coverage", s, flags=re.I)
+    s = re.sub(r"median_slab", "median slab", s, flags=re.I)
+    s = re.sub(r"_top(\d+)", r" top-\1", s, flags=re.I)
+    s = re.sub(r"_+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _resolve_tomo(stem, known):
+    """Match a stem against known tilt series. If the listing has not
+    arrived yet, believe the filename so a slice is still labelled
+    `XY slice` rather than a humanized leftover."""
+    tomo, species = _match_tomo(stem, known)
+    if tomo or known:
+        return tomo, species
+    return stem, None
+
+
 def parse_qc_name(rel, known_tomos=()):
     """Best-effort structure for a QC image path, for grouping in the UI."""
     directory, _, fname = rel.rpartition("/")
     stem = fname[:-4] if fname.lower().endswith(".png") else fname
+    dir_sp = _species_from_dir(directory)
     out = {"path": rel, "dir": directory or ".", "file": fname,
-           "tomo": None, "species": None, "kind": "other",
-           "slab": None, "variant": None, "label": stem}
+           "section": qc_section(directory),
+           "tomo": None, "species": dir_sp, "kind": "other",
+           "slab": None, "variant": None, "label": _humanize(stem)}
+
+    def finish(**kw):
+        out.update(kw)
+        if not out.get("species"):
+            out["species"] = dir_sp
+        return out
 
     m = _HAND_RE.match(stem)
     if m:
-        tomo, _ = _match_tomo(m.group("stem"), known_tomos)
-        out.update(kind="handedness", tomo=tomo, label="handedness")
-        return out
+        tomo, _ = _resolve_tomo(m.group("stem"), known_tomos)
+        return finish(kind="handedness", tomo=tomo, label="handedness")
     m = _SLAB_RE.match(stem)
     if m:
-        tomo, species = _match_tomo(m.group("stem"), known_tomos)
+        tomo, species = _resolve_tomo(_strip_noise(m.group("stem")), known_tomos)
         variant = m.group("variant")
-        out.update(kind="overlay", tomo=tomo, species=species,
-                   slab=int(m.group("slab")), variant=variant,
-                   label=f"slab {int(m.group('slab'))} \u00b7 "
-                         + ("all picks" if variant.lower() == "all" else "top-N"))
-        return out
+        return finish(kind="overlay", tomo=tomo, species=species,
+                      slab=int(m.group("slab")), variant=variant,
+                      label=f"slab {int(m.group('slab'))} \u00b7 "
+                            + ("all picks" if variant.lower() == "all" else "top-N"))
+    m = _OVERLAY_RE.match(stem)
+    if m:
+        tomo, species = _resolve_tomo(_strip_noise(m.group("stem")), known_tomos)
+        return finish(kind="overlay", tomo=tomo, species=species, label="picks")
+    m = _MONTAGES_RE.match(stem)
+    if m:
+        tomo, species = _resolve_tomo(_strip_noise(m.group("stem")), known_tomos)
+        top = re.search(r"top(\d+)", stem, re.I)
+        return finish(kind="overlay", tomo=tomo, species=species,
+                      variant="topN" if top else None,
+                      label=(f"top-{top.group(1)} slabs" if top else "slabs"))
     m = _SLICE_RE.match(stem)
     if m:
         core = m.group("stem")
@@ -838,11 +939,14 @@ def parse_qc_name(rel, known_tomos=()):
         if zm:
             zval = int(zm.group(1))
             core = core[:zm.start()]
-        tomo, _ = _match_tomo(core, known_tomos)
+        tomo, _ = _resolve_tomo(_strip_noise(core), known_tomos)
         view = m.group("view").upper()
-        out.update(kind="slice", tomo=tomo, slab=zval,
-                   label=f"{view} slice" + (f" \u00b7 z={zval}" if zval is not None else ""))
-        return out
+        label = (f"{view} slice" + (f" \u00b7 z={zval}" if zval is not None else "")
+                 if tomo else f"{_humanize(core)} \u00b7 {view}")
+        return finish(kind="slice", tomo=tomo, slab=zval, label=label)
+    tomo, species = _match_tomo(_strip_noise(stem), known_tomos)
+    if tomo:
+        return finish(tomo=tomo, species=species)
     return out
 
 
@@ -1114,6 +1218,11 @@ def training_cmd(work_dir):
         'echo "RUN $d"; '
         "n=0; for w in \"$d\"/weights.*.pkl; do [ -e \"$w\" ] && n=$((n+1)); done; "
         'echo "COUNT $d $n"; '
+        # Checkpoint mtimes give epochs/hour, so a running job can show an ETA
+        # against the Epochs count the log header declares.
+        "for w in \"$d\"/weights.*.pkl; do [ -e \"$w\" ] || continue; "
+        'e=${w##*/}; e=${e#weights.}; e=${e%.pkl}; '
+        'echo "MTIME $d $e $(stat -c %Y "$w" 2>/dev/null)"; done; '
         'if [ -f "$d/loss.txt" ]; then '
         'head -400 "$d/loss.txt" | while IFS= read -r l; '
         'do echo "RAW $d $l"; done; '
@@ -1125,21 +1234,46 @@ def training_cmd(work_dir):
         'log=$(grep -Eils "Output: .*${d}\\$" '
         'logs/train_opuset_*.out logs/train_opuset_*.err 2>/dev/null | sort | tail -1); '
         'if [ -n "$log" ]; then '
+        'echo "LOG $d $log"; '
+        # The header the trainer echoes before starting: config for the
+        # overview, inputs for the about section.
+        "awk -v d=\"$d\" "
+        "'/^[[:space:]]*(Epochs|Batch size|Learning rate|zdim|Output|STAR|Poses"
+        "|Mask|Split|Warm-start|ANGPIX|Tilt range|Tilt step):/ "
+        '{ gsub(/^[[:space:]]+/, ""); print "PARAM", d, $0 }\' "$log" | head -14; '
         # Slurm logs are tqdm progress spam: thousands of \\r-separated updates
-        # per epoch, each with a batch-level loss. Split CRs, then keep the
-        # LAST loss seen per epoch -- close to the end-of-epoch loss -- so the
-        # curve is one point per epoch rather than raw batch noise.
+        # per epoch, each with batch-level metrics. Split CRs, then AVERAGE the
+        # batch values per epoch -- a single batch loss is one noisy draw out
+        # of thousands (spread 0 to -0.0085 in a real run), which made a
+        # steadily falling run look flat. A metric the trainer did not print
+        # that epoch is emitted as "-" so the columns cannot silently misalign.
         "tr '\\r' '\\n' < \"$log\" | awk -v d=\"$d\" '"
         "/[Ee]poch/ && /loss=/ { "
-        "ep = \"\"; lo = \"\"; "
+        "ep = \"\"; lo = \"\"; be = \"\"; mu = \"\"; sn = \"\"; st = \"\"; "
         "if (match($0, /[Ee]poch[: ]*\\[[0-9]+/)) "
         '{ ep = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", ep) } '
         "else if (match($0, /[Ee]poch[: ]*[0-9]+/)) "
         '{ ep = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", ep) } '
         "if (match($0, /loss=[-+0-9.eE]+/)) "
         "{ lo = substr($0, RSTART + 5, RLENGTH - 5) } "
-        "if (ep != \"\" && lo != \"\") last[ep] = lo } "
-        "END { for (e in last) print \"RAW\", d, e, last[e] }' | sort -n -k3; "
+        "if (match($0, /beta=[-+0-9.eE]+/)) "
+        "{ be = substr($0, RSTART + 5, RLENGTH - 5) } "
+        "if (match($0, /mu=[-+0-9.eE]+/)) "
+        "{ mu = substr($0, RSTART + 3, RLENGTH - 3) } "
+        "if (match($0, /snr=[-+0-9.eE]+/)) "
+        "{ sn = substr($0, RSTART + 4, RLENGTH - 4) } "
+        "if (match($0, /std=[-+0-9.eE]+/)) "
+        "{ st = substr($0, RSTART + 4, RLENGTH - 4) } "
+        "if (ep != \"\" && lo != \"\") { "
+        "if (lo != \"\") { sum_l[ep] += lo; n_l[ep]++ } "
+        "if (be != \"\") { sum_b[ep] += be; n_b[ep]++ } "
+        "if (mu != \"\") { sum_m[ep] += mu; n_m[ep]++ } "
+        "if (sn != \"\") { sum_s[ep] += sn; n_s[ep]++ } "
+        "if (st != \"\") { sum_t[ep] += st; n_t[ep]++ } } } "
+        "END { for (e in n_l) print \"RAW\", d, e, "
+        "(n_l[e]?sum_l[e]/n_l[e]:\"-\"), (n_b[e]?sum_b[e]/n_b[e]:\"-\"), "
+        "(n_m[e]?sum_m[e]/n_m[e]:\"-\"), (n_s[e]?sum_s[e]/n_s[e]:\"-\"), "
+        "(n_t[e]?sum_t[e]/n_t[e]:\"-\") }' | sort -n -k3; "
         'fi; fi; done'
     )
     return ["sh", "-c", script, "_", work_dir]
@@ -1166,7 +1300,13 @@ def _parse_loss_line(rest):
 
 
 def parse_training(text):
-    """RUN/COUNT/RAW lines -> [{dir, weights, points:[{epoch, loss}]}]."""
+    """RUN/COUNT/RAW/PARAM/MTIME/LOG lines -> run dicts.
+
+    points carry {epoch, loss} and, where the trainer printed them, beta, mu,
+    snr and std. params holds the trainer's echoed header (epochs, batch size,
+    learning rate, zdim, output, inputs); mtimes maps checkpoint epoch ->
+    unix time, which the UI turns into an ETA.
+    """
     runs, order = {}, []
     for line in text.splitlines():
         if line.startswith("RUN "):
@@ -1178,14 +1318,106 @@ def parse_training(text):
             _, d, n = line.split(" ", 2)
             if d in runs and n.strip().isdigit():
                 runs[d]["weights"] = int(n)
+        elif line.startswith("PARAM "):
+            _, d, rest = line.split(" ", 2)
+            if d in runs:
+                key, _, val = rest.partition(":")
+                if key.strip():
+                    runs[d].setdefault("params", {})[key.strip()] = val.strip()
+        elif line.startswith("MTIME "):
+            parts = line.split(" ")
+            if (len(parts) == 4 and parts[1] in runs
+                    and parts[2].isdigit() and parts[3].isdigit()):
+                runs[parts[1]].setdefault("mtimes", {})[int(parts[2])] = int(parts[3])
+        elif line.startswith("LOG "):
+            _, d, path = line.split(" ", 2)
+            if d in runs:
+                runs[d]["log"] = path.strip()
         elif line.startswith("RAW "):
             _, d, rest = line.split(" ", 2)
             if d not in runs:
                 continue
-            epoch, loss = _parse_loss_line(rest)
-            if epoch is not None:
-                runs[d]["points"].append({"epoch": epoch, "loss": loss})
+            pt = _parse_point(rest)
+            if pt is not None:
+                runs[d]["points"].append(pt)
     return [runs[d] for d in order]
+
+
+def _parse_point(rest):
+    """New wire format first (epoch loss [beta mu snr std], '-' = absent);
+    the regex fallback keeps loss.txt rows and any older log shape alive."""
+    t = rest.split()
+    if t and t[0].isdigit() and len(t) >= 2:
+        try:
+            pt = {"epoch": int(t[0]), "loss": float(t[1])}
+        except ValueError:
+            return None
+        for name, v in zip(("beta", "mu", "snr", "std"), t[2:6]):
+            if v not in ("", "-"):
+                try:
+                    pt[name] = float(v)
+                except ValueError:
+                    pass
+        return pt
+    epoch, loss = _parse_loss_line(rest)
+    if epoch is None:
+        return None
+    return {"epoch": epoch, "loss": loss}
+
+
+# ---------------------------------------------------------------------------
+# Tomogram reconstruction headers: MRC dims + voxel size read straight from
+# the first 52 bytes of every reconstruction. This automates the Phase-5
+# sanity check opus-et-warp documents -- AreTomo and WARP dims must agree,
+# and every series must agree with every other -- instead of trusting that
+# someone ran headerPyTom on two files once.
+# ---------------------------------------------------------------------------
+
+def recon_cmd(work_dir):
+    # WARP names reconstructions <TS>_<angpix>Apx.mrc -- the pixel size sits
+    # before "Apx", so the glob is *Apx.mrc and the name strip peels the
+    # shortest _*Apx.mrc suffix.
+    script = (
+        'cd "$1" || exit 0; '
+        'for f in warp_tiltseries/reconstruction/*Apx.mrc; do '
+        '[ -e "$f" ] || continue; '
+        'b=${f##*/}; ts=${b%_*Apx.mrc}; '
+        'dim=$(dd if="$f" bs=4 skip=0 count=3 2>/dev/null | od -An -t d4 '
+        '| tr -s " \\n" " "); '
+        'cell=$(dd if="$f" bs=4 skip=10 count=3 2>/dev/null | od -An -t f4 '
+        '| tr -s " \\n" " "); '
+        'echo "RECON $ts $dim $cell"; done'
+    )
+    return ["sh", "-c", script, "_", work_dir]
+
+
+def parse_recon(text):
+    """RECON lines -> [{name, nx, ny, nz, voxel_a, dims_consistent}].
+
+    MRC ``cella`` is the cell EDGE in angstrom, not the voxel: voxel = cella
+    divided by the header's own grid count, which is the number headerPyTom's
+    ``spacing`` prints.
+    """
+    out = []
+    for line in text.splitlines():
+        if not line.startswith("RECON "):
+            continue
+        parts = line.split()
+        if len(parts) < 8:
+            continue
+        try:
+            nx, ny, nz = int(parts[2]), int(parts[3]), int(parts[4])
+            cella_x = float(parts[5])
+            if nx <= 0 or cella_x <= 0:
+                continue
+            out.append({"name": parts[1], "nx": nx, "ny": ny, "nz": nz,
+                        "voxel_a": round(cella_x / nx, 3)})
+        except ValueError:
+            continue
+    dims = {(r["nx"], r["ny"], r["nz"]) for r in out}
+    for r in out:
+        r["dims_consistent"] = len(dims) == 1
+    return out
 
 
 # ---------------------------------------------------------------------------

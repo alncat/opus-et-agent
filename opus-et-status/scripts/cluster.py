@@ -18,6 +18,32 @@ SSH_OPTS = [
 ]
 
 
+_SSH_NOISE = (
+    "** WARNING",
+    "** This session",
+    "** The server",
+    "openssh.com/pq.html",
+)
+
+
+def clean_ssh_text(text):
+    """Drop OpenSSH client warnings so they never reach the stale banner.
+
+    `ssh` prints the post-quantum key-exchange warning on stderr even when
+    `cat` itself only said the file was missing; the banner then hid the
+    actual error behind a paragraph of advisory text.
+    """
+    lines = []
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if any(s.startswith(p) or p in s for p in _SSH_NOISE):
+            continue
+        lines.append(s)
+    return " ".join(lines)
+
+
 class ClusterError(RuntimeError):
     """A cluster call failed. Carries a short, human-readable reason -- the
     message reaches the dashboard's stale banner, so it must never be a raw
@@ -72,7 +98,7 @@ class ClusterClient:
     def read_file(self, path):
         res = self.run(["cat", "--", path])
         if res.rc != 0:
-            raise FileNotFoundError(f"{path}: {res.stderr.strip()}")
+            raise FileNotFoundError(f"{path}: {clean_ssh_text(res.stderr) or 'not found'}")
         return res.stdout
 
     def read_bytes(self, path):
@@ -80,7 +106,7 @@ class ClusterClient:
         is decoded as text."""
         res = self.run(["base64", "--", path])
         if res.rc != 0:
-            raise FileNotFoundError(f"{path}: {res.stderr.strip()}")
+            raise FileNotFoundError(f"{path}: {clean_ssh_text(res.stderr) or 'not found'}")
         return base64.b64decode(res.stdout)
 
     def write_file(self, path, content):

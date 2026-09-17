@@ -52,6 +52,24 @@ def test_read_file_returns_contents():
     assert c.read_file("/some/path") == "hello"
 
 
+def test_read_file_drops_openssh_warnings_from_the_error():
+    """The stale banner used to lead with the post-quantum advisory, hiding
+    the actual 'no such file'."""
+    warn = (
+        "** WARNING: connection is not using a post-quantum key exchange algorithm.\n"
+        "** This session may be vulnerable to \"store now, decrypt later\" attacks.\n"
+        "** The server may need to be upgraded. See https://openssh.com/pq.html\n"
+        "cat: /run/.opus_run_state.json: No such file or directory\n"
+    )
+    c = cluster.ClusterClient("h", runner=FakeRunner([cluster.Result("", warn, 1)]))
+    with pytest.raises(FileNotFoundError) as exc:
+        c.read_file("/run/.opus_run_state.json")
+    msg = str(exc.value)
+    assert "No such file" in msg
+    assert "post-quantum" not in msg
+    assert "WARNING" not in msg
+
+
 def test_write_file_passes_path_as_argument_not_interpolated():
     """The path must never be interpolated into the shell string, or a crafted
     path would be executed. It is passed positionally as $1."""

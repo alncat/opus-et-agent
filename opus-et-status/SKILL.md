@@ -30,8 +30,9 @@ Then open <http://127.0.0.1:8080>.
 - One run per instance. To watch a second run, start another instance on a
   different `--port`; the header names the host and run directory each one
   watches.
-- The server binds `127.0.0.1` only and has **no authentication**. Do not
-  change `--bind` to expose it on a network.
+- Default `--bind` is `127.0.0.1`. There is **no authentication**. To view it
+  on the lab network, pass `--bind <LAN-IP>` (not `0.0.0.0`); Origin checks
+  then allow that IP as well as loopback.
 
 ## What it shows
 Nine tabs in pipeline order -- Run, Frames, Dataset, Visual QC, Training, Inventory, Refinement, Config, Runs -- each reading what the pipeline already wrote; the source and refresh interval of every panel, and what each column means. Full text: `references/panels.md`.
@@ -46,7 +47,9 @@ The FLCF score distribution from PyTOM's particle XML (the only file that carrie
 Acquisition order and accumulated dose from the mdocs joined to CTF resolution; AreTomo `.aln` shift tracks and dark-frame counts; handedness from WARP's XML. Full text: `references/panels.md`.
 
 ## Visual QC
-Browse the pipeline's QC images by section then tilt series, render slices and pick overlays on demand, and how the species filter treats overlays whose filenames name no species. Full text: `references/panels.md`.
+Browse the pipeline's QC images by check (Reconstruction, Gate 1, Gate 2, …)
+then tilt series, render slices and pick overlays on demand, and how the species
+filter treats overlays whose filenames name no species. Full text: `references/panels.md`.
 
 ## Species: switching and creating
 

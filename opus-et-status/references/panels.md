@@ -7,13 +7,16 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 Nine tabs, in the order the pipeline runs: **Run** (gates, phases, jobs,
 log), **Frames** (per tilt series: CTF quality, dose and alignment),
 **Dataset** (read-only acquisition facts), **Visual QC** (tomogram slices and
-template-matching overlays), **Training** (OPUS-ET runs under `opuset/` with
-loss curves), **Inventory** (template-matching scores, particle funnel, and
-which artifacts exist per series), **Refinement** (M's gold-standard FSC per
-species), **Config** (processing then species, in pipeline order) and **Runs**
-(other runs on the cluster, via `--runs-parent`). The stale banner and the
-"waiting on you" callout stay visible across all tabs. Tabs deep-link through
-the URL hash (`#qc`) and switch with keys `1`–`9`.
+template-matching overlays), **Training** (OPUS-ET runs under `opuset/` with a
+per-run drill-down: config, metrics, inputs), **Inventory** (template-matching
+scores, particle funnel, and which artifacts exist per series),
+**Refinement** (M's gold-standard FSC per species), **Config** (processing
+then species, in pipeline order) and **Runs** (other runs on the cluster, via
+`--runs-parent`). What needs a human right now -- a failed job, a parked
+checkpoint, an unsigned gate, a phase running with nothing queued, a filling
+filesystem -- surfaces once, in the attention strip at the top, most urgent
+first. Tabs deep-link through the URL hash (`#qc`) and switch with keys
+`1`–`9`.
 
 Every per-tilt-series number is in one table, under **Frames**. Dataset keeps
 only the facts that describe the whole dataset.
@@ -51,6 +54,17 @@ last loss per epoch). A run's curve comes from its newest log only —
 warm-start segments are not merged across runs. An upstream log-format change
 degrades to no curve, never to a wrong one.
 
+Each training run has a **detail** view: the trainer's echoed config
+(epochs, batch size, learning rate, zdim), a progress bar with an ETA from
+checkpoint mtimes (checkpoint pace × remaining epochs), per-epoch curves for
+every metric the tqdm lines carry (loss, beta, mu, snr, std -- a metric the
+epoch did not print is absent, not zero), and the input paths plus log file.
+Expansion survives the 5 s poll.
+
+The dose section draws the pooled damage curve **and** one small multiple per
+tilt series: the pooled view averages away exactly the outlier worth seeing --
+one series whose resolution falls off differently from the rest.
+
 | Panel | Source | Refresh |
 |---|---|---|
 | SLURM jobs (this run only) | `squeue` `%Z` + `logs/` + `sacct -j` | 15 s / 60 s |
@@ -62,6 +76,8 @@ degrades to no curve, never to a wrong one.
 | Visual QC images | `qc/`, `gate1_qc/` … `gate4_qc/` | 300 s |
 | Inventory matrix | filesystem checks in the run dir | 120 s |
 | Training runs + loss curves | `opuset/**/weights.*.pkl`, `loss.txt`, `logs/` | 120 s |
+| Recon headers (dims, voxel) | `warp_tiltseries/reconstruction/*Apx.mrc` | 300 s |
+| Attention strip | derived from jobs, run state, gates, disk | with each poll |
 | Frame quality histograms | `warp_{frame,tilt}series/processed_items.json` | 300 s |
 | Template-matching scores | `template_matching/*/particles/*_particles.xml` | 600 s |
 | Acquisition order and dose | `mdoc/*.mdoc` | 900 s |
@@ -70,7 +86,7 @@ degrades to no curve, never to a wrong one.
 
 Phase rows carry human-readable stage names (mirroring
 `opus-et-warp/scripts/manifest.yml`; unknown phases degrade to a bare
-number), and the "waiting on you" banner names the parked phase's stage too.
+number), and the attention strip names the parked phase's stage too.
 
 The browser tab title stays live when the dashboard is in the background:
 active job count plus a mark when a job fails or a source goes stale. The
@@ -219,47 +235,48 @@ inclination reproduces the `CtfInclination` the per-series table already shows.
 
 The **Visual QC** tab browses PNGs the pipeline produced: reconstructed
 tomogram slices (`qc/<ts>_{xy,xz}.png`), the handedness montage, and
-template-matching pick overlays (`gate2_qc/`).
+template-matching pick overlays (`gate2_qc/`, and nested folders such as
+`qc/gate2_<species>/`).
+
+A **check strip** (Reconstruction / Gate 1 / Gate 2 / …) is the primary
+navigation: you are always in one check. The tab opens on the latest check
+that has images, so Gate 2 is not buried under reconstruction. Within a check
+every tilt series gets a row, so the eye runs down a column of the same view
+across series — which is the actual QC question, *which one is bad?*. Dataset-
+wide figures (template checks, all-series montages) sit in an **Overview** row,
+not a fake tilt series. Clicking a row's label narrows to that series and
+clicking it again restores the rest.
 
 Images are shown as a **thumbnail grid**, not a list of filenames — a QC
 browser is useless if you must open each image to find out what it holds.
-Thumbnails are generated once on the cluster into `qc_thumbs/` (240 px grey
-JPEG, ~14 KB versus ~2.2 MB for the original) and returned base64 in a single
-request, so a filtered view of ~15 images costs about 200 KB and under two
-seconds rather than 33 MB. Clicking one opens the full image in the viewer
-directly above the listing.
+Thumbnails are generated once on the cluster into `qc_thumbs/` (280 px colour
+JPEG) and returned base64 in a single request. Clicking one opens the full
+image in an overlay, captioned as series · species · view, with a filmstrip
+of neighbours. Arrow keys step through the filtered images; `Esc` closes.
 
-Renders you make here appear as **Rendered here**, directly under the Render
-button that produced them; the archive below lists only pipeline output.
+Renders you make here appear as **Rendered here**, above the archive; the
+Render form itself is folded under the listing so browsing stays the default
+job of the tab.
 
-The archive is **two levels deep: section, then one row per tilt series.** A
-section is the pipeline step that produced the images, in pipeline order
-(`qc/` reconstruction, then `gate1_qc` … `gate4_qc`), each captioned with the
-question it answers rather than only the directory it came from. Within a
-section every tilt series gets a row, so the eye runs down a column of the
-same view across series — which is the actual QC question, *which one is
-bad?*, and the one a dropdown showing a single series at a time cannot answer.
-Clicking a row's label narrows to that series and clicking it again restores
-the rest.
+The archive is scanned **three levels deep** under `qc/`, `gate1_qc/` …
+`gate4_qc/`, so overlays the pipeline wrote into `qc/gate2_j360/` are found
+without copying them to the top level. A nested `gate2_*` folder is Gate 2,
+not reconstruction. Species is taken from that folder name when the filename
+does not carry one.
 
-Filenames are parsed into tomogram / kind / species / slab / variant and shown
-as readable captions (`slab 142 · all picks`). The directories disagree on
-separators — `gate2_qc` writes `TS028` where the tomostar says `TS_028` — so
-names are compared normalised and unify onto one tilt series.
+There are **two filters, not three**, plus a picks all/top-N chip when both
+variants exist. `kind` and the source directory said almost the same thing
+(`qc/` holds the slices, `gate2_qc/` the overlays), so filtering on both
+narrowed nothing while costing two dropdowns. What remains is tilt series
+(defaulting to *all*, so the comparison is the default view) and species,
+which is the axis that actually splits the overlays.
 
-There are **two filters, not three**. `kind` and the source directory said
-almost the same thing (`qc/` holds the slices, `gate2_qc/` the overlays), so
-filtering on both narrowed nothing while costing two dropdowns, and grouping
-on both nested a heading inside its own restatement. What remains is tilt
-series (defaulting to *all*, so the comparison is the default view) and
-species, which is the axis that actually splits the overlays.
-
-The species filter is **strict about what the filenames claim**. A slice has
-no species and is never filtered out by one. An overlay whose filename carries
-no species (a plain `<ts>_slab<N>_<variant>.png` with no species prefix) is
-matched only by an explicit **unlabelled** chip, never by a species name, which
-would be an attribution nothing on disk supports. The section says how many are
-unattributed and that re-rendering produces labelled copies.
+The species filter is **strict about what the filenames (or folder) claim**.
+A slice has no species and is never filtered out by one. An overlay whose
+filename carries no species and whose folder names none either is matched
+only by an explicit **unlabelled** chip, never by a species name, which
+would be an attribution nothing on disk supports. The section says how many
+are unattributed and that re-rendering produces labelled copies.
 
 Only the discovered listing is servable: `/api/qc/image?path=…` matches the
 requested path against that listing and refuses anything else with 403, so a

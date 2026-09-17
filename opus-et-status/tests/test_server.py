@@ -159,6 +159,38 @@ def test_post_with_foreign_origin_is_rejected(server):
     assert editor.applied == []
 
 
+def test_origin_hosts_for_bind_adds_lan_ip_not_wildcard():
+    assert status_server.origin_hosts_for_bind("10.146.10.5") == {
+        "127.0.0.1", "localhost", "10.146.10.5"}
+    assert "0.0.0.0" not in status_server.origin_hosts_for_bind("0.0.0.0")
+
+
+def test_post_from_lan_bind_origin_is_allowed():
+    p = poller_mod.Poller({"squeue": lambda: [], "run_state": lambda: {"phases": {}}},
+                          {"squeue": 10.0, "run_state": 10.0})
+    p.refresh_due()
+    editor = StubEditor()
+    handler = status_server.make_handler(
+        p, editor, csrf_token="tok123",
+        origin_hosts=status_server.origin_hosts_for_bind("10.146.10.5"))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        resp = _post(f"{base}/api/config", {"key": "ZDIM", "value": "16"},
+                     {"Content-Type": "application/json", "X-CSRF-Token": "tok123",
+                      "Origin": "http://10.146.10.5:8766"})
+        assert resp.status == 200
+        assert editor.applied == [("ZDIM", "16")]
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            _post(f"{base}/api/config", {"key": "ZDIM", "value": "16"},
+                  {"Content-Type": "application/json", "X-CSRF-Token": "tok123",
+                   "Origin": "http://evil.example"})
+        assert exc.value.code == 403
+    finally:
+        httpd.shutdown()
+
+
 def test_post_with_valid_token_applies_edit(server):
     base, editor = server
     resp = _post(f"{base}/api/config", {"key": "ZDIM", "value": "16"},
@@ -749,7 +781,7 @@ def test_qc_defaults_to_every_tilt_series():
     """Defaulting to one arbitrary series hid the comparison the page exists
     to make."""
     js = status_server.PAGE.split("<script>", 1)[1]
-    assert "QC_FILTER={tomo:'all',species:'all'}" in js
+    assert "QC_FILTER={tomo:'all',species:'all'" in js
 
 
 def test_responses_are_not_cacheable(server):
@@ -829,7 +861,7 @@ def test_qc_list_separates_sources():
     """Pipeline output and on-demand renders are different provenance and were
     confusing shown side by side in one row."""
     js = status_server.PAGE.split("<script>", 1)[1]
-    assert "bySrc" in js              # one section per pipeline step
+    assert "qcSection" in js          # one check at a time via e.section
     assert "ONDEMAND" in js           # renders made here stay under the controls
 
 
@@ -883,6 +915,7 @@ def test_qc_is_two_levels_deep_section_then_tilt_series():
     assert "function thumbGrid(" not in js                  # old renderer gone
     assert "chipsByKind" not in js and "chipRows" not in js
     assert "function pickQcTomo(" in js   # a row label narrows to its series
+    assert "Overview" in js               # dataset-wide images are not a fake series
 
 
 def test_every_qc_section_says_what_it_answers():
@@ -1175,3 +1208,29 @@ def test_species_filter_does_not_claim_unlabelled_overlays():
     # A slice has no species to begin with, so it is never filtered out by one.
     assert "if(e.kind!=='overlay') return true;" in js
     assert "name no species in the filename" in js
+
+
+def test_qc_has_a_check_strip():
+    """The page opens on one check, not a scroll through reconstruction to
+    reach Gate 2."""
+    page = status_server.PAGE
+    js = page.split("<script>", 1)[1]
+    assert 'id="qcnav"' in page
+    assert "function pickQcSection(" in js
+    assert "presentSections" in js
+
+
+def test_qc_render_sits_under_the_archive():
+    """Render is a write; browsing the images the pipeline already produced
+    is the default job of this tab."""
+    page = status_server.PAGE
+    assert 'id="qcmore"' in page
+    assert page.index('id="qclist"') < page.index('id="qcrender"')
+
+
+def test_qc_lightbox_captions_the_check_not_the_path():
+    js = status_server.PAGE.split("<script>", 1)[1]
+    assert "function qcCaption(" in js
+    body = js[js.index("function showQc("):js.index("function navQc(")]
+    assert "qcCaption" in body
+    assert "qcStrip" in body

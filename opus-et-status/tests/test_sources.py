@@ -139,11 +139,23 @@ def test_parse_qc_list_drops_anything_that_escapes_the_run_dir():
     assert out == ["qc/ok.png"]
 
 
+def test_parse_qc_list_keeps_nested_pngs_under_qc_dirs():
+    out = sources.parse_qc_list(
+        "qc/gate2_j360/tomo1_overlay.png\nother/secret.png\n")
+    assert out == ["qc/gate2_j360/tomo1_overlay.png"]
+
+
 def test_qc_list_cmd_scans_the_known_qc_directories():
     cmd = " ".join(sources.qc_list_cmd("/run"))
     assert "/run" in cmd
     for d in ("qc", "gate2_qc"):
         assert d in cmd
+
+
+def test_qc_list_cmd_walks_nested_pngs():
+    cmd = " ".join(sources.qc_list_cmd("/run"))
+    assert "find" in cmd
+    assert "*.png" in cmd
 
 
 KNOWN = ["TS_026", "TS_028", "TS_030", "TS_034"]
@@ -199,6 +211,44 @@ def test_parse_qc_name_reads_a_depth_suffixed_slice():
 def test_parse_qc_name_still_reads_an_unsuffixed_slice():
     e = sources.parse_qc_name("qc/TS_026_xy.png", KNOWN)
     assert e["tomo"] == "TS_026" and e["slab"] is None and e["label"] == "XY slice"
+
+
+MITO = ["MITO-260908-3-3-tomo1", "MITO-260908-3-3-tomo10", "MITO-260908-3-3-tomo7"]
+
+
+def test_parse_qc_name_reads_nested_gate_overlays():
+    """Gate 2 overlays live in qc/gate2_<species>/, not only in gate2_qc/."""
+    e = sources.parse_qc_name(
+        "qc/gate2_j360/MITO-260908-3-3-tomo10_overlay_slab110_all.png", MITO)
+    assert e["section"] == "gate2_qc"
+    assert e["tomo"] == "MITO-260908-3-3-tomo10"
+    assert e["species"] == "j360"
+    assert (e["kind"], e["slab"], e["variant"]) == ("overlay", 110, "all")
+
+
+def test_parse_qc_name_reads_a_bare_overlay_in_a_species_folder():
+    e = sources.parse_qc_name(
+        "qc/gate2_s8ugi_min/MITO-260908-3-3-tomo1_overlay.png", MITO)
+    assert e["section"] == "gate2_qc"
+    assert e["species"] == "s8ugi_min"
+    assert e["tomo"] == "MITO-260908-3-3-tomo1"
+    assert e["label"] == "picks"
+
+
+def test_parse_qc_name_treats_picks_folder_as_gate_2():
+    e = sources.parse_qc_name(
+        "qc/j360_picks/MITO-260908-3-3-tomo1_top200_slabs.png", MITO)
+    assert e["section"] == "gate2_qc"
+    assert e["species"] == "j360"
+    assert e["tomo"] == "MITO-260908-3-3-tomo1"
+    assert e["variant"] == "topN"
+
+
+def test_parse_qc_name_keeps_dataset_overviews_untomoed():
+    e = sources.parse_qc_name("qc/j360_template_check.png", MITO)
+    assert e["section"] == "qc"
+    assert e["tomo"] is None
+    assert "template" in e["label"]
 
 
 def test_parse_inventory_flags_each_stage():
@@ -302,6 +352,7 @@ def test_remote_scripts_never_contain_dollar_hash():
         sources.tm_scores_cmd("/run")[2],
         sources.mdoc_cmd("/run")[2],
         sources.align_cmd("/run")[2],
+        sources.recon_cmd("/run")[2],
     ]
     for script in scripts:
         assert "$#" not in script, f"fragile $# in: {script[:120]}"
@@ -309,12 +360,15 @@ def test_remote_scripts_never_contain_dollar_hash():
 
 def test_training_cmd_reduces_tqdm_logs_per_epoch():
     """Slurm training logs are tqdm spam: thousands of CR-separated updates
-    per epoch, each carrying a batch-level loss. The scan must reduce them
-    remotely (CR split, last loss per epoch) or a curve is only epoch-1
-    batch noise."""
+    per epoch, each carrying batch-level metrics. The scan must reduce them
+    remotely (CR split, last value per epoch per metric) or a curve is only
+    epoch-1 batch noise."""
     script = sources.training_cmd("/run")[2]
     assert "tr '\\r' '\\n'" in script
-    assert "last[ep] = lo" in script
+    # epoch MEAN of the batch losses, not the last batch: one batch is a
+    # noisy draw out of thousands and made a falling run look flat
+    assert "sum_l[ep] += lo; n_l[ep]++" in script
+    assert "sum_l[e]/n_l[e]" in script
     assert "sort -n -k3" in script
 
 
@@ -725,3 +779,67 @@ def test_merge_jobs_keeps_history_gpu_for_live_rows():
     live2 = [sources.Job("8", "align", "RUNNING", "1:00", "main", "n1", gpu=1)]
     hist2 = [sources.Job("8", "align", "RUNNING", "1:00", "main", "n1", gpu=9)]
     assert sources.merge_jobs(live2, hist2)[0].gpu == 1
+
+
+def test_training_cmd_emits_params_checkpoints_and_multimetric_curves():
+    """The drill-down needs the trainer's echoed header (config + inputs),
+    checkpoint mtimes for an ETA, and all five per-epoch metrics the tqdm
+    lines carry -- not just loss."""
+    script = sources.training_cmd("/run")[2]
+    for needle in ("PARAM", "MTIME $d $e $(stat -c %Y", "LOG $d $log",
+                   "beta=[-+0-9.eE]+", "snr=[-+0-9.eE]+", "std=[-+0-9.eE]+"):
+        assert needle in script, needle
+
+
+def test_parse_training_reads_params_mtimes_log_and_multimetric_points():
+    raw = ("RUN opuset/fas/z8\n"
+           "COUNT opuset/fas/z8 2\n"
+           "PARAM opuset/fas/z8 Epochs: 40\n"
+           "PARAM opuset/fas/z8 Batch size: 12\n"
+           "PARAM opuset/fas/z8 Learning rate: 4e-5\n"
+           "PARAM opuset/fas/z8 Output: /run/opuset/fas/z8\n"
+           "MTIME opuset/fas/z8 1 1700000000\n"
+           "MTIME opuset/fas/z8 2 1700000480\n"
+           "LOG opuset/fas/z8 logs/train_opuset_160153.out\n"
+           "RAW opuset/fas/z8 1 -0.0011 0.102 0.0496 0.00011 1.33\n"
+           "RAW opuset/fas/z8 2 -0.00113 - - 0.00009 -\n")
+    runs = sources.parse_training(raw)
+    r = runs[0]
+    assert r["params"]["Epochs"] == "40"
+    assert r["params"]["Batch size"] == "12"
+    assert r["params"]["Learning rate"] == "4e-5"
+    assert r["params"]["Output"] == "/run/opuset/fas/z8"
+    assert r["mtimes"] == {1: 1700000000, 2: 1700000480}
+    assert r["log"] == "logs/train_opuset_160153.out"
+    assert r["points"][0] == {"epoch": 1, "loss": -0.0011, "beta": 0.102,
+                              "mu": 0.0496, "snr": 0.00011, "std": 1.33}
+    # a metric the epoch did not print is absent, never zero
+    assert r["points"][1]["loss"] == -0.00113 and r["points"][1]["snr"] == 0.00009
+    assert "beta" not in r["points"][1] and "std" not in r["points"][1]
+
+
+def test_recon_cmd_reads_mrc_headers():
+    script = sources.recon_cmd("/run")[2]
+    assert "*Apx.mrc" in script and "od -An -t d4" in script and "od -An -t f4" in script
+    # the voxel-size fields sit at byte 40, i.e. dd block 10 of 4 bytes
+    assert "skip=10 count=3" in script
+
+
+def test_parse_recon_flags_dimension_mismatch_across_series():
+    # cella is the cell EDGE in angstrom: voxel = cella / grid count
+    raw = ("RECON TS_026 960 928 460 12940.8 12509.439 6740\n"
+           "RECON TS_027 960 928 460 12940.8 12509.439 6740\n"
+           "RECON TS_028 480 464 230 6470.4 6254.72 3370\n")
+    rows = sources.parse_recon(raw)
+    by = {r["name"]: r for r in rows}
+    assert (by["TS_026"]["nx"], by["TS_026"]["ny"], by["TS_026"]["nz"]) == (960, 928, 460)
+    assert by["TS_026"]["voxel_a"] == 13.48
+    assert by["TS_026"]["dims_consistent"] is False
+    assert by["TS_027"]["dims_consistent"] is False
+
+
+def test_parse_recon_all_consistent_when_dims_match():
+    raw = ("RECON TS_026 960 928 460 12940.8 12509.439 6740\n"
+           "RECON TS_027 960 928 460 12940.8 12509.439 6740\n")
+    rows = sources.parse_recon(raw)
+    assert all(r["dims_consistent"] for r in rows)

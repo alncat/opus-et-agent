@@ -144,34 +144,49 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
    padding:.15rem .55rem;box-shadow:0 1px 2px rgba(28,27,26,.04)}
  #gates{padding:.55rem .75rem .25rem}
  #cfgpipeline,#cfgspecies{padding:.4rem .85rem .6rem}
- #qcrender,#qcfilter{background:var(--card);border:1px solid var(--line);border-radius:8px;
+ #qcrender,#qcfilter,#qcnav{background:var(--card);border:1px solid var(--line);border-radius:8px;
    padding:.6rem .8rem;box-shadow:0 1px 2px rgba(28,27,26,.04)}
- #qcfilter{margin-bottom:.9rem}
+ #qcnav{position:sticky;top:2.7rem;z-index:9;margin-bottom:.7rem;display:flex;
+        flex-wrap:wrap;gap:.35rem;align-items:center}
+ #qcfilter{margin-bottom:.9rem;display:flex;flex-direction:column;gap:.4rem}
+ .qfilt{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center}
+ .qfilt>.muted{min-width:5.6rem}
  .qgroup{background:var(--card);border:1px solid var(--line);border-radius:8px;
          margin:.8rem 0;padding:.6rem .8rem;box-shadow:0 1px 2px rgba(28,27,26,.04)}
  .qlab2{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;
         color:var(--muted);margin-bottom:.45rem;font-weight:600}
- .qgrid{display:flex;flex-wrap:wrap;gap:.6rem}
- .qcard{margin:0;width:132px;cursor:pointer}
- .qcard img{width:132px;height:132px;object-fit:cover;display:block;
-            border:1px solid var(--line);background:#fff;border-radius:4px}
+ .qgrid{display:flex;flex-wrap:wrap;gap:.7rem}
+ .qcard{margin:0;width:156px;cursor:pointer}
+ .qcard img{width:156px;height:156px;object-fit:contain;display:block;
+            border:1px solid var(--line);background:#f2f0ed;border-radius:4px}
  .qcard:hover img{border-color:var(--accent)}
- .qph{width:132px;height:132px;border:1px dashed var(--line-strong);
+ .qph{width:156px;height:156px;border:1px dashed var(--line-strong);
       background:#f2f0ed;border-radius:4px}
  .qcard figcaption{font-size:.72rem;color:var(--muted);margin-top:.3rem;line-height:1.3}
  .qhint{font-size:.8rem;color:var(--muted);margin:-.25rem 0 .55rem}
- .qrow{display:grid;grid-template-columns:7.5rem 1fr;gap:.7rem;align-items:start;
-       padding:.5rem 0;border-top:1px solid var(--line)}
+ .qask{font-size:.95rem;color:var(--fg);margin:.15rem 0 .85rem;max-width:40rem}
+ .qrow{display:grid;grid-template-columns:6.5rem 1fr;gap:.7rem;align-items:start;
+       padding:.55rem 0;border-top:1px solid var(--line)}
  .qrow:first-of-type{border-top:none;padding-top:.1rem}
  .qrowlab{font-size:.8rem;padding-top:.2rem}
  .qrowlab .muted{margin-left:.35rem;font-variant-numeric:tabular-nums}
  .qtomo{border:none;background:none;font:inherit;color:var(--accent);cursor:pointer;
-        padding:0;text-align:left}
- .qtomo:hover{text-decoration:underline}
+        padding:0;text-align:left;box-shadow:none}
+ .qtomo:hover{text-decoration:underline;background:none}
  .qchip{border:1px solid var(--line-strong);background:var(--card);color:inherit;
         font:inherit;font-size:.78rem;padding:.15rem .6rem;border-radius:999px;
-        cursor:pointer;margin-right:.3rem}
- .qchip.ok{background:#fff4e6;border-color:#ffc078;color:#d9480f;font-weight:600}
+        cursor:pointer;margin:0;box-shadow:none}
+ .qchip.ok,.qcheck.on{background:#fff4e6;border-color:#ffc078;color:#d9480f;font-weight:600}
+ .qcheck{font-size:.82rem;padding:.28rem .75rem}
+ html.dark .qchip.ok,html.dark .qcheck.on{background:#382a1c;color:#ffa94d;border-color:#7a4a1f}
+ html.dark .qcard img,html.dark .qph{background:#2a2826}
+ #qcmore{margin-top:1.6rem}
+ #qcmore>summary{cursor:pointer;font-size:.82rem;color:var(--muted);margin-bottom:.5rem}
+ .qstrip{display:flex;gap:.35rem;margin-top:.35rem;max-width:94vw;overflow-x:auto}
+ .qmini{width:56px;height:56px;padding:0;border-radius:4px;overflow:hidden;opacity:.5;
+        box-shadow:none}
+ .qmini img{width:56px;height:56px;object-fit:cover;display:block}
+ .qmini.on{opacity:1;border-color:var(--accent)}
  #tabbar{margin:1.1rem 0 1.3rem;border-bottom:1px solid var(--line-strong);
          position:sticky;top:0;background:var(--bg);z-index:10;padding-top:.3rem}
  .tab{border:none;background:none;font:inherit;padding:.55rem 1rem;cursor:pointer;
@@ -201,8 +216,8 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
   body{padding:1rem}
   #phases>table,#jobs>table,#ds>table,#ts>table,#inv>table,#runslist>table,
   #cfgpipeline table,#cfgspecies table{display:block;overflow-x:auto}
-  .qcard{width:104px}
-  .qcard img,.qph{width:104px;height:104px}
+  .qcard{width:118px}
+  .qcard img,.qph{width:118px;height:118px}
   .qrow{grid-template-columns:1fr;gap:.2rem}
  }
 </style></head><body>
@@ -265,11 +280,14 @@ and frames are grouped by the tilt series that lists them, so any naming convent
 </div>
 
 <div id="tab-qc" hidden>
-<h2>Visual QC <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">&mdash; images the pipeline already produced</span></h2>
-<div id="qcrender"></div>
-<div id="qcfilter" style="margin-bottom:.6rem"></div>
+<h2>Visual QC <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">&mdash; one check at a time, then the same view across tilt series</span></h2>
+<div id="qcnav"></div>
+<div id="qcfilter"></div>
 <div id="qcmine" hidden style="margin-bottom:1.1rem"></div>
 <div id="qclist"></div>
+<details id="qcmore"><summary>Render a new view</summary>
+<div id="qcrender"></div>
+</details>
 </div>
 
 <div id="tab-training" hidden>
@@ -332,8 +350,8 @@ function showTab(name){
   if(name==='qc') loadQc();
   if(name==='config'||name==='dataset') loadCfg();
 }
-let QC_READY=false, QC_ENTRIES=[], QC_FILTER={tomo:'all',species:'all'}, SPECIES_LIST=[],
-    QC_THUMBS={}, THUMB_PENDING=false, QC_LIST=[], QC_IDX=0;
+let QC_READY=false, QC_ENTRIES=[], QC_FILTER={tomo:'all',species:'all',section:'auto',variant:'all'}, SPECIES_LIST=[],
+    QC_THUMBS={}, THUMB_PENDING=false, QC_LIST=[], QC_IDX=0, QC_SECTION_CHOSEN=false;
 function srcState(st,name){
   const s=(st.sources||{})[name]||{};
   if(s.error) return 'error';
@@ -471,7 +489,7 @@ async function tick(){
   document.getElementById('jobsum').textContent=[(s.jobs||[]).length+' jobs',
     acc.gpu_hours?acc.gpu_hours+' GPU\u00b7h':'',
     acc.n_failed?acc.n_failed+' failed':''].filter(Boolean).join(' \u00b7 ');
-  renderInventory(s.inventory);
+  renderInventory(s.inventory, s.recon);
   renderTmScores(s);
   renderFrames(s);
   renderTraining(s.training);
@@ -763,9 +781,9 @@ function renderTmScores(st){
 // Plotted against accumulated dose rather than tilt angle: in a dose-symmetric
 // scheme those are different orderings, and only the mdoc records which movie
 // was taken when.
-function doseSvg(pts){
+function doseSvg(pts,mini){
   if(pts.length<3) return '';
-  const W=640,H=180,PL=38,PR=10,PT=10,PB=28;
+  const W=mini?320:640, H=mini?120:180, PL=mini?30:38, PR=10, PT=10, PB=mini?16:28;
   const ds=pts.map(p=>p.cum_dose), rs=pts.map(p=>p.resolution);
   const dmax=Math.max.apply(null,ds), rmn=Math.min.apply(null,rs),
         rmx=Math.max.apply(null,rs);
@@ -796,8 +814,8 @@ function doseSvg(pts){
     <text x="${PL}" y="${H-PB+13}" font-size="9" fill="var(--muted)">0</text>
     <text x="${W-PR}" y="${H-PB+13}" font-size="9" text-anchor="end"
           fill="var(--muted)">${frFmt(dmax)}</text>
-    <text x="${(W+PL)/2}" y="${H-2}" font-size="9" text-anchor="middle"
-          fill="var(--muted)">accumulated dose (e&#8315;/&#8491;&#178;) &mdash; y: CTF resolution, best at top; green = median per bucket</text>
+    ${mini?'':`<text x="${(W+PL)/2}" y="${H-2}" font-size="9" text-anchor="middle"
+          fill="var(--muted)">accumulated dose (e&#8315;/&#8491;&#178;) &mdash; y: CTF resolution, best at top; green = median per bucket</text>`}
   </svg>`;
 }
 function renderDose(f){
@@ -810,7 +828,17 @@ function renderDose(f){
   }
   const all=[];
   keys.forEach(k=>(dose[k].points||[]).forEach(p=>all.push(p)));
+  // Per-series damage small multiples: the pooled curve above averages away
+  // exactly the thing worth noticing -- one series whose resolution falls
+  // off differently from the rest.
+  const minis=keys.filter(k=>(dose[k].points||[]).length>=3);
   el.innerHTML=doseSvg(all)
+    +(minis.length?`<div class="qlab2" style="margin-top:.7rem">Damage curve per tilt series</div>
+      <div class="hgrid">`
+      +minis.map(k=>`<div class="hcard"><h4>${esc(k)}`
+        +`<span class="muted" style="float:right">n ${(dose[k].points||[]).length}</span></h4>`
+        +doseSvg(dose[k].points,true)+'</div>').join('')
+      +'</div>':'')
     +'<table style="margin-top:.4rem"><tr><th>Tilt series</th><th>Scheme</th>'
     +'<th>Tilts matched</th>'
     +'<th title="largest stage move from the first position in the series">Stage drift'
@@ -872,49 +900,157 @@ function renderAlign(st,series){
     +'it imports this alignment and stores the same movement in &aring;ngstr&ouml;m. '
     +'<code>Dark</code> counts tilts AreTomo threw out as too dark to align.</div>';
 }
-function renderInventory(inv){
-  inv=inv||[];
+function renderInventory(inv, recon){
+  inv=inv||[]; recon=recon||[];
   const el=document.getElementById('inv');
   const cols=[['stack','Stack'],['aligned','Aligned'],['recon','Reconstructed'],
               ['tm','TM star'],['export','Exported']];
   const done=inv.filter(x=>x.recon).length;
+  const rc={}; recon.forEach(r=>{ rc[r.name]=r; });
+  // The Phase-5 sanity check opus-et-warp documents, automated: every WARP
+  // reconstruction must have the same nx,ny,nz -- one odd series means a
+  // skipped dim update or a wrong binning, and coordinates are wrong too.
+  const dims={}; recon.forEach(r=>{ dims[r.nx+'x'+r.ny+'x'+r.nz]=1; });
+  const dimKeys=Object.keys(dims);
+  const bad=recon.length>1&&dimKeys.length>1;
   document.getElementById('invsum').textContent=inv.length
-    ? done+' of '+inv.length+' reconstructed' : '';
+    ? done+' of '+inv.length+' reconstructed'
+      +(recon.length?(bad?' \u2014 RECON DIMS DIFFER ACROSS SERIES!'
+                          :' \u00b7 dims '+dimKeys.join(' = ')
+                          +' \u00b7 voxel '+recon[0].voxel_a+' A'):'')
+    : '';
   el.innerHTML=inv.length
-    ? '<table><tr><th>Tilt series</th>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr>'
-      +inv.map(x=>`<tr${x.excluded?' class="excluded"':''}><td><code>${esc(x.name)}</code>${x.excluded?' <span class="FAILED">excluded</span>':''}</td>`
-        +cols.map(c=>`<td class="num">${x[c[0]]?'<span class="RUNNING">&#10003;</span>':'<span class="muted">&mdash;</span>'}</td>`).join('')
-        +'</tr>').join('')+'</table>'
+    ? '<table><tr><th>Tilt series</th>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')
+      +(recon.length?'<th>Recon dims</th><th>Voxel <span class="u">(&Aring;)</span></th>':'')
+      +'</tr>'
+      +inv.map(x=>{ const r=rc[x.name];
+        return `<tr${x.excluded?' class="excluded"':''}><td><code>${esc(x.name)}</code>${x.excluded?' <span class="FAILED">excluded</span>':''}</td>`
+          +cols.map(c=>`<td class="num">${x[c[0]]?'<span class="RUNNING">&#10003;</span>':'<span class="muted">&mdash;</span>'}</td>`).join('')
+          +(recon.length?`<td class="num">${r?esc(r.nx+'×'+r.ny+'×'+r.nz):'<span class="muted">&mdash;</span>'}</td>`
+            +`<td class="num">${r?r.voxel_a:'<span class="muted">&mdash;</span>'}</td>`:'')
+          +'</tr>'; }).join('')+'</table>'
+      +(bad?'<div class="stale" style="margin-top:.5rem"><b>Reconstruction dimensions differ across series.</b> '
+           +'opus-et-warp documents this as the Phase-5 failure: a skipped dim update or a wrong '
+           +'binning, and every downstream coordinate is wrong for the odd series.</div>':'')
     : '<span class="muted">no tilt series found under tomostar/</span>';
 }
+// The 5 s tick rebuilds these cards, so expansion is tracked by run dir --
+// otherwise an open detail view would snap shut every poll.
+const TRAIN_OPEN={}, TRAIN_RUNS=[];
 function renderTraining(runs){
   runs=runs||[];
+  TRAIN_RUNS.length=0; runs.forEach(r=>TRAIN_RUNS.push(r));
   const el=document.getElementById('training');
   el.innerHTML=runs.length
-    ? runs.map(r=>{
-        const pts=r.points||[];
+    ? runs.map((r,i)=>{ try{
+        const pts=r.points||[], p=r.params||{};
         const last=pts.length?pts[pts.length-1].loss:'?';
-        const ep=pts.length?Math.max.apply(null,pts.map(p=>p.epoch)):'?';
+        const ep=pts.length?Math.max.apply(null,pts.map(x=>x.epoch)):'?';
+        const total=parseInt(p.Epochs||'',10);
+        const eta=trainEta(r);
+        const open=!!TRAIN_OPEN[r.dir];
         return `<div class="qgroup"><div class="qlab2">${esc(r.dir)}
+          <button class="qchip" style="float:right" onclick="toggleTrain('${esc(r.dir)}')">${open?'close':'detail'}</button>
           <span style="text-transform:none">&middot; ${r.weights} checkpoint${r.weights===1?'':'s'}
-          &middot; epoch ${ep} &middot; loss ${last}</span></div>${lossSvg(pts)}</div>`;
-      }).join('')
+          &middot; epoch ${ep}${total?' / '+total:''} &middot; loss ${last}${eta?' &middot; ETA '+eta.txt:''}</span></div>
+          ${lossSvg(pts)}
+          <div id="traindetail-${i}" ${open?'':'hidden'} style="margin-top:.7rem">
+            ${trainOverview(r)}${trainMetrics(r)}${trainAbout(r)}
+          </div></div>`;
+      }catch(e){
+        return `<div class="qgroup"><div class="qlab2">${esc(r.dir||'run')}</div>
+          <span class="muted">could not render this run: ${esc(String(e).slice(0,120))}</span></div>`;
+      } }).join('')
     : '<span class="muted">no training runs under opuset/ yet -- phase 8 writes weights and a loss curve there</span>';
 }
-function lossSvg(pts){
-  if(pts.length<2) return '<div class="muted">not enough loss points for a curve yet</div>';
-  const W=720,H=130,P=8;
-  const ys=pts.map(p=>p.loss);
-  const mn=Math.min.apply(null,ys),mx=Math.max.apply(null,ys);
-  const X=i=>P+(W-2*P)*i/(pts.length-1);
-  const Y=v=>mx===mn?H/2:P+(H-2*P)*(v-mn)/(mx-mn);
-  const path=pts.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p.loss).toFixed(1)).join(' ');
+function toggleTrain(dir){
+  TRAIN_OPEN[dir]=!TRAIN_OPEN[dir];
+  renderTraining(TRAIN_RUNS);
+}
+function trainOverview(r){
+  const p=r.params||{}, pts=r.points||[];
+  const last=pts.length?pts[pts.length-1].epoch:null;
+  const total=parseInt(p.Epochs||'',10);
+  const pct=last!=null&&total?Math.min(100,Math.round(100*last/total)):null;
+  const row=(k)=>p[k]?`<tr><td><code>${esc(k)}</code></td><td class="num">${esc(p[k])}</td></tr>`:'';
+  return `<div class="qlab2">Overview</div>
+    <table><tr><th>Parameter</th><th>Value</th></tr>
+      ${['Epochs','Batch size','Learning rate','zdim','ANGPIX','Tilt range','Tilt step']
+        .map(row).join('')}</table>
+    ${pct!=null?`<div class="bar" style="width:100%;margin-top:.5rem"><i style="width:${pct}%"></i></div>
+      <div class="muted" style="font-size:.8rem">${last} of ${total} epochs (${pct}%)</div>`:''}
+    ${trainEtaLine(r)}`;
+}
+// Checkpoint mtimes are a wall-clock ruler: epochs per hour from the first
+// and last checkpoint, remaining epochs from the declared total.
+function trainEta(r){
+  const total=parseInt((r.params||{}).Epochs||'',10);
+  const mt=r.mtimes||{}, ks=Object.keys(mt).map(Number).sort((a,b)=>a-b);
+  if(!total||ks.length<2) return null;
+  const lastEp=ks[ks.length-1];
+  if(lastEp>=total) return null;
+  const rate=(mt[ks[ks.length-1]]-mt[ks[0]])/(ks[ks.length-1]-ks[0]);
+  if(!(rate>0)) return null;
+  const mins=Math.round((total-lastEp)*rate/60);
+  const txt=mins>90? '~'+Math.floor(mins/60)+' h '+(mins%60)+' m' : '~'+mins+' min';
+  return {txt: txt, pace: (rate/60).toFixed(1)};
+}
+function trainEtaLine(r){
+  const e=trainEta(r);
+  return e?`<div class="muted" style="font-size:.85rem;margin-top:.3rem">checkpoint pace `
+    +e.pace+' min/epoch &mdash; remaining '+e.txt+'</div>':'';
+}
+function trainMetrics(r){
+  const pts=r.points||[];
+  const fam=[['loss','loss',720,130],['beta','beta',350,110],['snr','SNR',350,110],
+             ['std','std',350,110],['mu','&mu;',350,110]];
+  const cards=fam.map(f=>{ const s=seriesSvg(pts,f[0],f[1],f[2],f[3]);
+    return s?`<div class="hcard"><h4>${f[1]}</h4>${s}</div>`:''; }).filter(Boolean).join('');
+  return cards?'<div class="qlab2" style="margin-top:.7rem">Metrics</div>'
+    +'<div class="hgrid">'+cards+'</div>':'';
+}
+function trainAbout(r){
+  const p=r.params||{};
+  const paths=[['Output',p.Output],['STAR',p.STAR],['Poses',p.Poses],
+               ['Mask',p.Mask],['Split',p.Split],['Warm-start',p['Warm-start']]]
+    .filter(x=>x[1]).map(x=>`<tr><td><code>${esc(x[0])}</code></td>`
+      +`<td style="word-break:break-all"><code>${esc(x[1])}</code></td></tr>`).join('');
+  const log=r.log?`<tr><td><code>log</code></td><td style="word-break:break-all"><code>${esc(r.log)}</code></td></tr>`:'';
+  return (paths||log)?'<div class="qlab2" style="margin-top:.7rem">About</div>'
+    +'<table>'+paths+log+'</table>':'';
+}
+function lossSvg(pts){ return seriesSvg(pts,'loss','loss',720,130); }
+// Small multiple for one metric over epochs: same shape as the loss curve,
+// smaller and label-light, so five metrics read as one family.
+function seriesSvg(pts,key,label,W,H){
+  const v=pts.filter(p=>p[key]!=null&&isFinite(p[key]));
+  if(v.length<2) return '';
+  // Axis pads sized so the y tick labels clear the left edge, matching the
+  // dose chart's look.
+  const PL=46,PR=10,PT=12,PB=20;
+  const ys=v.map(p=>p[key]);
+  let mn=Math.min.apply(null,ys),mx=Math.max.apply(null,ys);
+  if(mx-mn<1e-12){ const d=Math.abs(mn||1)/2; mn-=d; mx+=d; }
+  const X=i=>PL+(W-PL-PR)*i/(v.length-1);
+  // Standard orientation: larger values higher on the chart, so a falling
+  // loss is drawn falling. (An earlier version put the minimum at the top,
+  // which drew a decreasing loss as an ascending line.)
+  const Y=x=>H-PB-(H-PT-PB)*(x-mn)/(mx-mn);
+  const path=v.map((p,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(p[key]).toFixed(1)).join(' ');
+  const fmt=x=>Math.abs(x)>=1000?x.toPrecision(3):Math.abs(x)>=1?x.toFixed(1):x.toPrecision(2);
+  const yticks=[mx,(mx+mn)/2,mn].map(val=>
+    `<line x1="${PL-3}" y1="${Y(val).toFixed(1)}" x2="${PL}" y2="${Y(val).toFixed(1)}" stroke="var(--line-strong)"/>`
+    +`<text x="${PL-5}" y="${(Y(val)+3).toFixed(1)}" font-size="8.5" text-anchor="end" fill="var(--muted)">${fmt(val)}</text>`).join('');
+  const xt=[0,.33,.67,1].map(f=>{
+    const idx=Math.round(f*(v.length-1)), x=X(idx);
+    return `<line x1="${x.toFixed(1)}" y1="${H-PB}" x2="${x.toFixed(1)}" y2="${H-PB+3}" stroke="var(--line-strong)"/>`
+      +`<text x="${x.toFixed(1)}" y="${H-PB+13}" font-size="8.5" text-anchor="middle" fill="var(--muted)">${v[idx].epoch}</text>`; }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;background:var(--card);border:1px solid var(--line);border-radius:6px">
+    <line x1="${PL}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="var(--line-strong)"/>
+    <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${H-PB}" stroke="var(--line-strong)"/>
+    ${yticks}${xt}
     <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
-    <text x="${P}" y="${H-4}" font-size="10" fill="var(--muted)">epoch ${pts[0].epoch}</text>
-    <text x="${W-P}" y="${H-4}" font-size="10" fill="var(--muted)" text-anchor="end">epoch ${pts[pts.length-1].epoch}</text>
-    <text x="${P}" y="13" font-size="10" fill="var(--muted)">max ${mx.toPrecision(4)}</text>
-    <text x="${W-P}" y="13" font-size="10" fill="var(--muted)" text-anchor="end">min ${mn.toPrecision(4)}</text>
+    <text x="${PL}" y="11" font-size="9" fill="var(--muted)">${esc(label)}</text>
   </svg>`;
 }
 function renderRuns(rs){
@@ -1043,14 +1179,16 @@ function showQc(rel){
   if(!QC_LIST.includes(rel)) QC_LIST=[rel];
   QC_IDX=QC_LIST.indexOf(rel);
   const many=QC_LIST.length>1;
+  const e=entryOf(rel);
   const l=document.getElementById('qclight');
-  l.innerHTML=`<div class="cap">${esc(rel)}</div>
-    <img src="/api/qc/image?path=${encodeURIComponent(rel)}" alt="${esc(rel)}"
+  l.innerHTML=`<div class="cap">${esc(qcCaption(e))}</div>
+    <img src="/api/qc/image?path=${encodeURIComponent(rel)}" alt="${esc(qcCaption(e))}"
          onload="document.getElementById('qcload').textContent='click anywhere or press Esc to close'">
     <div class="lnav">${many?`<button class="navbtn" onclick="event.stopPropagation();navQc(-1)" title="previous image">&#8249;</button>
       <span class="lcount">${QC_IDX+1} / ${QC_LIST.length}</span>
       <button class="navbtn" onclick="event.stopPropagation();navQc(1)" title="next image">&#8250;</button>`:''}</div>
-    <div class="hint" id="qcload">loading full image&hellip;</div>`;
+    ${qcStrip(QC_IDX)}
+    <div class="hint" id="qcload" title="${esc(rel)}">loading full image&hellip;</div>`;
   l.hidden=false;
 }
 function navQc(d){
@@ -1136,46 +1274,26 @@ async function loadQc(){
   const imgs=b.images||[];
   QC_READY = imgs.length>0 && tomos.length>0;
   QC_ENTRIES = b.entries || [];
-  if(!imgs.length){ document.getElementById('qcfilter').innerHTML='';
+  if(!imgs.length){
+    document.getElementById('qcnav').innerHTML='';
+    document.getElementById('qcfilter').innerHTML='';
     document.getElementById('qclist').innerHTML=
       `<span class="muted">${note(qcS,'no QC images found')}</span>`; return; }
-  const withTomo=[...new Set(QC_ENTRIES.map(e=>e.tomo).filter(Boolean))].sort();
-  const withSp=[...new Set(QC_ENTRIES.map(e=>e.species).filter(Boolean))].sort();
-  const anyBare=QC_ENTRIES.some(e=>e.kind==='overlay'&&!e.species);
-  if(anyBare) withSp.push('unlabelled');
-  if(QC_FILTER.tomo!=='all' && !withTomo.includes(QC_FILTER.tomo))
+  const secs=presentSections(QC_ENTRIES);
+  if(!QC_SECTION_CHOSEN || !secs.some(s=>s.id===QC_FILTER.section)){
+    QC_FILTER.section = secs.length ? secs[secs.length-1].id : 'qc';
+    QC_SECTION_CHOSEN=true;
+  }
+  if(QC_FILTER.tomo!=='all' && !QC_ENTRIES.some(e=>e.tomo===QC_FILTER.tomo))
     QC_FILTER.tomo='all';
-  if(QC_FILTER.species!=='all' && !withSp.includes(QC_FILTER.species))
-    QC_FILTER.species='all';
-  // Two axes, not three: which tilt series, and which species' picks. The
-  // sections below already separate the pipeline steps, so a "kind" or
-  // "source" dropdown would only restate a heading you can already see.
-  document.getElementById('qcfilter').innerHTML=
-    `<span class="muted">Tilt series</span>
-     <select id="fTomo" aria-label="filter by tilt series"
-             onchange="QC_FILTER.tomo=this.value;renderQcList()">
-       <option value="all"${QC_FILTER.tomo==='all'?' selected':''}>all (${withTomo.length})</option>
-       ${withTomo.map(x=>`<option${x===QC_FILTER.tomo?' selected':''}>${esc(x)}</option>`).join('')}
-     </select>`
-    +(withSp.length>1
-      ? `<span class="muted" style="margin-left:.9rem">Species</span>
-         <span id="fSpecies">`
-        +[['all','all']].concat(withSp.map(x=>[x,x])).map(([v,l])=>
-          `<button class="qchip${QC_FILTER.species===v?' ok':''}" data-sp="${esc(v)}"
-             onclick="pickQcSpecies('${esc(v)}')">${esc(l)}</button>`).join('')
-        +'</span>' : '')
-    +`<span class="muted" style="margin-left:.9rem" id="fCount"></span>`;
   syncROpts();
   renderQcList();
 }
-// A section is the pipeline step that produced the images -- which is the
-// question you are answering when you look at them. `kind` and `dir` used to
-// be two dropdowns, but they say almost the same thing (qc holds the slices,
-// gate2_qc holds the overlays), so filtering on both narrowed nothing and
-// grouping on both nested a heading inside its own restatement.
-const QC_SRC_LABELS={qc:'Reconstruction · slices and handedness',
-  gate1_qc:'Gate 1 · alignment QC', gate2_qc:'Gate 2 · pick overlays',
-  gate3_qc:'Gate 3 · state selection', gate4_qc:'Gate 4 · refinement',
+// A section is the pipeline check you are answering. Nested folders such as
+// qc/gate2_j360/ belong to Gate 2, not to reconstruction, via e.section.
+const QC_SRC_LABELS={qc:'Reconstruction',
+  gate1_qc:'Gate 1 · alignment', gate2_qc:'Gate 2 · picks',
+  gate3_qc:'Gate 3 · states', gate4_qc:'Gate 4 · refinement',
   qc_ondemand:'Rendered here'};
 const QC_SRC_HINT={qc:'Is the tomogram reconstructed and the handedness right?',
   gate1_qc:'Is the tilt-series alignment good enough to keep?',
@@ -1183,34 +1301,79 @@ const QC_SRC_HINT={qc:'Is the tomogram reconstructed and the handedness right?',
   gate3_qc:'Which state is the one worth refining?',
   gate4_qc:'Does the final map look like the density it claims?'};
 function qcSrcLabel(d){ return QC_SRC_LABELS[d]||d; }
+function qcSection(e){ return e.section||e.dir; }
 // Pipeline order, not alphabetical: sorting by name put Gate 2 above the
 // reconstruction it is drawn on top of.
 const QC_SRC_ORDER=['qc','gate1_qc','gate2_qc','gate3_qc','gate4_qc'];
 function qcSrcRank(d){ const i=QC_SRC_ORDER.indexOf(d);
                        return i<0?QC_SRC_ORDER.length:i; }
+function presentSections(entries){
+  const have={};
+  entries.forEach(e=>{ if(e.dir===ONDEMAND) return;
+                       const s=qcSection(e); have[s]=(have[s]||0)+1; });
+  return Object.keys(have)
+    .sort((a,b)=>qcSrcRank(a)-qcSrcRank(b)||a.localeCompare(b))
+    .map(id=>({id, n:have[id]}));
+}
+function shortTomo(t, all){
+  if(!t) return 'Overview';
+  const names=(all&&all.length?all:[t]).filter(Boolean);
+  if(names.length<2) return t;
+  let i=0, first=names[0];
+  while(i<first.length && names.every(n=>n[i]===first[i])) i++;
+  while(i>0 && !/[-_]/.test(first[i-1])) i--;
+  return t.slice(i)||t;
+}
+function entryOf(rel){ return QC_ENTRIES.find(e=>e.path===rel)||{path:rel,label:rel}; }
+function qcCaption(e){
+  const tomos=[...new Set(QC_ENTRIES.map(x=>x.tomo).filter(Boolean))];
+  return [e.tomo?shortTomo(e.tomo,tomos):null, e.species, e.label].filter(Boolean).join(' · ')||e.path;
+}
+function qcStrip(idx){
+  const n=QC_LIST.length;
+  if(n<2) return '';
+  const win=8;
+  let lo=Math.max(0, idx-Math.floor(win/2)), hi=Math.min(n, lo+win);
+  lo=Math.max(0, hi-win);
+  return `<div class="qstrip" onclick="event.stopPropagation()">`
+    +QC_LIST.slice(lo,hi).map((p,i)=>{
+      const k=lo+i, src=QC_THUMBS[p];
+      return `<button class="qmini${k===idx?' on':''}" title="${esc(qcCaption(entryOf(p)))}"
+        onclick="event.stopPropagation();showQc('${esc(p)}')">`
+        +(src?`<img src="${src}" alt="">`:'')+`</button>`;
+    }).join('')+'</div>';
+}
 function qcCard(e,showTomo){
   const src=QC_THUMBS[e.path];
-  const cap=[showTomo?e.tomo:null, e.species, e.label].filter(Boolean).join(' · ');
+  const tomos=[...new Set(QC_ENTRIES.map(x=>x.tomo).filter(Boolean))];
+  const cap=[showTomo&&e.tomo?shortTomo(e.tomo,tomos):null, e.species, e.label].filter(Boolean).join(' · ');
   return `<figure class="qcard" title="${esc(e.path)}" onclick="showQc('${esc(e.path)}')">`
     +(src?`<img src="${src}" alt="${esc(cap)}">`:'<div class="qph"></div>')
     +`<figcaption>${esc(cap)}</figcaption></figure>`;
 }
 // One row per tilt series, so the eye can run down a column of the same view
 // across series -- which is the actual QC question ("which one is bad?").
-// A dropdown that shows one series at a time cannot answer it.
+// Dataset-wide images sit in Overview, not a fake "no tilt series" filter.
 function seriesRows(items){
   const byTomo={};
-  items.forEach(e=>{ const t=e.tomo||'no tilt series';
-                     (byTomo[t]=byTomo[t]||[]).push(e); });
-  return Object.keys(byTomo).sort().map(t=>{
+  items.forEach(e=>{ const t=e.tomo||''; (byTomo[t]=byTomo[t]||[]).push(e); });
+  const keys=Object.keys(byTomo).sort((a,b)=>{
+    if(!a) return -1; if(!b) return 1;
+    return a.localeCompare(b, undefined, {numeric:true, sensitivity:'base'});
+  });
+  const all=keys.filter(Boolean);
+  return keys.map(t=>{
     const g=byTomo[t].slice().sort((a,b)=>
       (a.species||'').localeCompare(b.species||'')||(a.slab||0)-(b.slab||0)
       ||String(a.variant||'').localeCompare(String(b.variant||''))
       ||a.label.localeCompare(b.label));
-    return `<div class="qrow"><div class="qrowlab">
-        <button class="qtomo" onclick="pickQcTomo('${esc(t)}')"
-                title="show only this tilt series">${esc(t)}</button>
-        <span class="muted">${g.length}</span></div>
+    const ov=!t;
+    const lab=ov?'Overview':shortTomo(t, all);
+    return `<div class="qrow"><div class="qrowlab">`
+      +(ov?`<span title="dataset-wide">${esc(lab)}</span>`
+          :`<button class="qtomo" onclick="pickQcTomo('${esc(t)}')"
+                title="${esc(t)}">${esc(lab)}</button>`)
+      +`<span class="muted">${g.length}</span></div>
       <div class="qgrid">${g.map(e=>qcCard(e,false)).join('')}</div></div>`;
   }).join('');
 }
@@ -1223,10 +1386,10 @@ function keepSpecies(e,want){
   if(e.kind!=='overlay') return true;
   return want==='unlabelled' ? !e.species : e.species===want;
 }
-function pickQcTomo(t){ QC_FILTER.tomo=(QC_FILTER.tomo===t?'all':t);
-                        const s=document.getElementById('fTomo');
-                        if(s) s.value=QC_FILTER.tomo; renderQcList(); }
+function pickQcTomo(t){ QC_FILTER.tomo=(QC_FILTER.tomo===t?'all':t); renderQcList(); }
 function pickQcSpecies(sp){ QC_FILTER.species=sp; renderQcList(); }
+function pickQcSection(id){ QC_FILTER.section=id; QC_FILTER.tomo='all'; renderQcList(); }
+function pickQcVariant(v){ QC_FILTER.variant=v; renderQcList(); }
 async function loadThumbs(paths){
   const want=paths.filter(p=>!(p in QC_THUMBS));
   if(!want.length||THUMB_PENDING) return;
@@ -1245,43 +1408,74 @@ async function loadThumbs(paths){
   // mark attempted so a failure cannot spin the fetch loop
   batch.forEach(p=>{ if(!(p in QC_THUMBS)) QC_THUMBS[p]=null; });
   THUMB_PENDING=false;
-  renderQcList();
+  renderQcList(true);
 }
-function renderQcList(){
+function renderQcList(thumbsOnly){
   const f=QC_FILTER;
-  const keep=e=>(f.tomo==='all'||e.tomo===f.tomo)&&keepSpecies(e,f.species);
-  // Renders made here sit right under the controls that produced them, above
-  // the pipeline archive -- and the section only exists when it has content.
-  const mine=QC_ENTRIES.filter(e=>e.dir===ONDEMAND&&keep(e));
+  const matchVar=e=>f.variant==='all' || (f.variant==='allpicks'&&e.variant==='all')
+    || (f.variant==='topN'&&e.variant==='topN');
+  const keepMine=e=>(f.tomo==='all'||e.tomo===f.tomo)&&keepSpecies(e,f.species)&&matchVar(e);
+  const archived=QC_ENTRIES.filter(e=>e.dir!==ONDEMAND);
+  const inSec=archived.filter(e=>qcSection(e)===f.section);
+  const withTomo=[...new Set(inSec.map(e=>e.tomo).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b, undefined, {numeric:true, sensitivity:'base'}));
+  const withSp=[...new Set(inSec.map(e=>e.species).filter(Boolean))].sort();
+  if(inSec.some(e=>e.kind==='overlay'&&!e.species)) withSp.push('unlabelled');
+  if(f.species!=='all' && !withSp.includes(f.species)) QC_FILTER.species='all';
+  const hasAll=inSec.some(e=>e.variant==='all'), hasTop=inSec.some(e=>e.variant==='topN');
+  if(!(hasAll&&hasTop) && f.variant!=='all') QC_FILTER.variant='all';
+  const keep=e=>qcSection(e)===f.section && keepMine(e);
+  const mine=QC_ENTRIES.filter(e=>e.dir===ONDEMAND&&keepMine(e));
   const mineEl=document.getElementById('qcmine');
   mineEl.hidden=!mine.length;
   mineEl.innerHTML=`<div class="qgroup"><div class="qlab2">Rendered here
       <span style="text-transform:none" class="muted">(${mine.length})</span></div>`
     +seriesRows(mine)+'</div>';
-  const es=QC_ENTRIES.filter(e=>e.dir!==ONDEMAND&&keep(e));
-  const spSel=document.getElementById('fSpecies');
-  if(spSel) spSel.querySelectorAll('button').forEach(b=>
-    b.classList.toggle('ok', b.dataset.sp===f.species));
+  const es=archived.filter(keep);
+  const secs=presentSections(QC_ENTRIES);
+  if(!thumbsOnly){
+  document.getElementById('qcnav').innerHTML=secs.map(s=>
+    `<button class="qcheck${s.id===f.section?' on':''}" onclick="pickQcSection('${esc(s.id)}')">`
+    +`${esc(qcSrcLabel(s.id))} <span class="muted">${s.n}</span></button>`).join('');
+  document.getElementById('qcfilter').innerHTML=
+    (withTomo.length
+      ? `<div class="qfilt"><span class="muted">Tilt series</span><span id="fTomo">`
+        +`<button class="qchip${f.tomo==='all'?' ok':''}" onclick="QC_FILTER.tomo='all';renderQcList()">all (${withTomo.length})</button>`
+        +withTomo.map(x=>`<button class="qchip${x===f.tomo?' ok':''}"
+            onclick="pickQcTomo('${esc(x)}')">${esc(shortTomo(x,withTomo))}</button>`).join('')
+        +'</span></div>' : '<span id="fTomo" hidden></span>')
+    +(withSp.length>1
+      ? `<div class="qfilt"><span class="muted">Species</span><span id="fSpecies">`
+        +[['all','all']].concat(withSp.map(x=>[x,x])).map(([v,l])=>
+          `<button class="qchip${f.species===v?' ok':''}" data-sp="${esc(v)}"
+             onclick="pickQcSpecies('${esc(v)}')">${esc(l)}</button>`).join('')
+        +'</span></div>' : '')
+    +(hasAll&&hasTop
+      ? `<div class="qfilt"><span class="muted">Picks</span><span id="fVariant">`
+        +[['all','all'],['allpicks','all picks'],['topN','top-N']].map(([v,l])=>
+          `<button class="qchip${f.variant===v?' ok':''}"
+             onclick="pickQcVariant('${v}')">${l}</button>`).join('')
+        +'</span></div>' : '')
+    +`<span class="muted" id="fCount"></span>`;
+  }
   const c=document.getElementById('fCount');
-  if(c) c.textContent=`${es.length} of ${QC_ENTRIES.filter(e=>e.dir!==ONDEMAND).length}`
-                      +` archived images`+(f.tomo==='all'?'':` · ${esc(f.tomo)} only`);
+  if(c) c.textContent=`${es.length} of ${inSec.length}`
+                      +(f.tomo==='all'?'':` · ${esc(shortTomo(f.tomo,withTomo))} only`);
   const listEl=document.getElementById('qclist');
   if(!es.length){
     listEl.innerHTML='<span class="muted">nothing matches this filter</span>';
   }else{
-    const bySrc={};
-    es.forEach(e=>{ (bySrc[e.dir]=bySrc[e.dir]||[]).push(e); });
-    listEl.innerHTML=Object.keys(bySrc)
-      .sort((a,b)=>qcSrcRank(a)-qcSrcRank(b)||a.localeCompare(b)).map(sk=>
-      `<div class="qgroup"><div class="qlab2">${esc(qcSrcLabel(sk))}
-         <span style="text-transform:none" class="muted">(${bySrc[sk].length})</span></div>`
-      +(QC_SRC_HINT[sk]?`<div class="qhint">${esc(QC_SRC_HINT[sk])}
-         <span class="muted">&mdash; from <code>${esc(sk)}/</code></span></div>`:'')
-      +(()=>{ const bare=bySrc[sk].filter(e=>e.kind==='overlay'&&!e.species).length;
-              return bare?`<div class="qhint" style="color:var(--accent)">${bare} of these
+    const dirs=[...new Set(es.map(e=>e.dir))];
+    const from=dirs.length<=3?dirs.map(d=>`<code>${esc(d)}/</code>`).join(' ')
+                             :`${dirs.length} folders`;
+    const bare=es.filter(e=>e.kind==='overlay'&&!e.species).length;
+    listEl.innerHTML=`<div class="qgroup">`
+      +(QC_SRC_HINT[f.section]?`<p class="qask">${esc(QC_SRC_HINT[f.section])}</p>`:'')
+      +`<div class="qhint">from ${from}</div>`
+      +(bare?`<div class="qhint" style="color:var(--accent)">${bare} of these
                 name no species in the filename, so they cannot be attributed to one
-                &mdash; re-render them from the controls above to get labelled copies.</div>`:''; })()
-      +seriesRows(bySrc[sk])+'</div>').join('');
+                &mdash; re-render them from Render a new view below to get labelled copies.</div>`:'')
+      +seriesRows(es)+'</div>';
   }
   QC_LIST=[...mine,...es].map(e=>e.path);
   loadThumbs(QC_LIST);
@@ -1564,6 +1758,8 @@ def build_status(snapshot, work_dir=None):
     inventory = (inv.data if inv is not None and inv.data else []) or []
     tr = snapshot.get("training")
     training = (tr.data if tr is not None and tr.data else []) or []
+    rc = snapshot.get("recon")
+    recons = (rc.data if rc is not None and rc.data else []) or []
     rn = snapshot.get("runs")
     runs = (rn.data if rn is not None and rn.data else []) or []
     waiting = sorted(
@@ -1630,6 +1826,7 @@ def build_status(snapshot, work_dir=None):
         "gates": gates,
         "waiting": waiting,
         "inventory": inventory,
+        "recon": recons,
         "training": training,
         "runs": runs,
         "accounting": accounting,
@@ -1638,9 +1835,24 @@ def build_status(snapshot, work_dir=None):
     }
 
 
+def origin_hosts_for_bind(bind):
+    """Hostnames a browser Origin may use for POSTs.
+
+    Loopback is always allowed. A specific `--bind` IP is allowed so a lab-LAN
+    dashboard works; `0.0.0.0` is not a hostname and is not added -- binding
+    every interface still has no auth, so Origin stays loopback-only in that
+    case.
+    """
+    hosts = {"127.0.0.1", "localhost"}
+    if bind and bind not in ("0.0.0.0", "::"):
+        hosts.add(bind)
+    return hosts
+
+
 def make_handler(poller, editor, csrf_token, log_fetch=None, image_fetch=None,
                  render_qc=None, render_opts=None, thumb_fetch=None, run_label="",
-                 runs_parent="", work_dir=""):
+                 runs_parent="", work_dir="", origin_hosts=None):
+    allowed_origin_hosts = frozenset(origin_hosts or origin_hosts_for_bind("127.0.0.1"))
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -1760,7 +1972,7 @@ def make_handler(poller, editor, csrf_token, log_fetch=None, image_fetch=None,
             if self.headers.get("X-CSRF-Token") != csrf_token:
                 return self._send(403, jdump({"error": "bad csrf token"}))
             origin = self.headers.get("Origin")
-            if origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost"):
+            if origin and urlparse(origin).hostname not in allowed_origin_hosts:
                 return self._send(403, jdump({"error": "bad origin"}))
             if "application/json" not in (self.headers.get("Content-Type") or ""):
                 return self._send(403, jdump({"error": "json required"}))
@@ -1920,6 +2132,8 @@ def main(argv=None):
         # login node unhassled.
         "inventory": lambda: sources.parse_inventory(
             client.run(sources.inventory_cmd(wd), timeout=120).stdout),
+        "recon": lambda: sources.parse_recon(
+            client.run(sources.recon_cmd(wd), timeout=120).stdout),
         "training": lambda: sources.parse_training(
             client.run(sources.training_cmd(wd), timeout=120).stdout),
     }
@@ -1937,6 +2151,7 @@ def main(argv=None):
     ttls["alignment"] = 300.0
     ttls["refinement"] = 300.0
     ttls["inventory"] = 120.0
+    ttls["recon"] = 300.0
     ttls["training"] = 120.0
     ttls["runs"] = 300.0
     p = poller_mod.Poller(fetchers, ttls)
@@ -2063,7 +2278,8 @@ def main(argv=None):
                                             render_qc, _render_opts, thumb_fetch,
                                             run_label=label,
                                             runs_parent=args.runs_parent,
-                                            work_dir=wd))
+                                            work_dir=wd,
+                                            origin_hosts=origin_hosts_for_bind(args.bind)))
     print(f"OPUS-ET status on http://{args.bind}:{args.port}  (ctrl-c to stop)")
     try:
         httpd.serve_forever()
