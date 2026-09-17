@@ -351,6 +351,7 @@ def test_remote_scripts_never_contain_dollar_hash():
         sources.frames_cmd("/run")[2],
         sources.tm_scores_cmd("/run")[2],
         sources.mdoc_cmd("/run")[2],
+        sources.acquisition_cmd("/run")[2],
         sources.align_cmd("/run")[2],
         sources.recon_cmd("/run")[2],
     ]
@@ -712,6 +713,85 @@ def test_join_dose_pairs_accumulated_dose_with_ctf_resolution():
 def test_join_dose_is_empty_without_either_side():
     assert sources.join_dose({}, {"a": 1.0}) == {}
     assert sources.join_dose(sources.parse_mdoc(MDOC_OUT), {}) == {}
+
+
+TOMOSTAR_OUT = "\n".join([
+    # Geometric order (high tilt first); `_wrpDose` is already cumulative.
+    "TS_026|TS_026_22.tif|-2.0043|6.4000",
+    "TS_026|TS_026_23.tif|-0.0050|0.0000",
+    "TS_026|TS_026_24.tif|1.9948|3.2000",
+    "TS_026|TS_026_25.tif|3.9900|9.6000",
+    "TS_026|../warp_frameseries/TS_026_21.tif|-3.9900|12.8000",
+]) + "\n"
+
+
+def test_parse_tomostar_dose_treats_wrpDose_as_already_cumulative():
+    out = sources.parse_tomostar_dose(TOMOSTAR_OUT)["TS_026"]
+    assert [t["movie"] for t in out["tilts"]] == [
+        "TS_026_23.tif", "TS_026_24.tif", "TS_026_22.tif",
+        "TS_026_25.tif", "TS_026_21.tif"]
+    assert [t["cum_dose"] for t in out["tilts"]] == [
+        0.0, 3.2, 6.4, 9.6, 12.8]
+    assert out["tilts"][1]["dose"] == 3.2
+    assert out["total_dose"] == 12.8
+    assert out["scheme"] == "dose-symmetric"
+
+
+def test_parse_tomostar_dose_detects_continuous_scheme_in_dose_order():
+    rows = "\n".join(
+        f"TS_1|m_{i:02d}.tif|{-40 + 2 * i}|{3.2 * i:.4f}" for i in range(40))
+    assert sources.parse_tomostar_dose(rows)["TS_1"]["scheme"] == "continuous"
+
+
+def test_merge_acquisition_prefers_tomostar_when_mdoc_dose_is_zero():
+    mdoc = sources.parse_mdoc("\n".join([
+        "TS_026.mrc|0|TiltAngle|0",
+        "TS_026.mrc|0|ExposureDose|0",
+        "TS_026.mrc|0|SubFramePath|ignored.mrc",
+        "TS_026.mrc|0|StagePosition|1 2",
+        "TS_026.mrc|1|TiltAngle|2",
+        "TS_026.mrc|1|ExposureDose|0",
+        "TS_026.mrc|1|StagePosition|1.1 2",
+    ]))
+    merged = sources.merge_acquisition(
+        mdoc, sources.parse_tomostar_dose(TOMOSTAR_OUT))
+    assert merged["TS_026"]["total_dose"] == 12.8
+    assert merged["TS_026"]["tilts"][0]["movie"] == "TS_026_23.tif"
+    assert abs(merged["TS_026"]["stage_drift"] - 0.1) < 1e-6
+
+
+def test_merge_acquisition_keeps_mdoc_when_ExposureDose_is_real():
+    merged = sources.merge_acquisition(
+        sources.parse_mdoc(MDOC_OUT),
+        sources.parse_tomostar_dose(TOMOSTAR_OUT))
+    assert merged["TS_026"]["tilts"][0]["movie"] == "TS_026_23.mrc"
+    assert merged["TS_026"]["total_dose"] == 9.437
+
+
+def test_parse_acquisition_splits_mdoc_and_tomostar_halves():
+    zero = "\n".join([
+        "TS_026.mrc|0|TiltAngle|0",
+        "TS_026.mrc|0|ExposureDose|0",
+        "TS_026.mrc|0|SubFramePath|ignored.mrc",
+    ])
+    out = sources.parse_acquisition(zero + "\n---STAR---\n" + TOMOSTAR_OUT)
+    assert out["TS_026"]["total_dose"] == 12.8
+    fallback = sources.parse_acquisition(MDOC_OUT + "\n---STAR---\n")
+    assert fallback["TS_026"]["total_dose"] == 9.437
+
+
+def test_join_dose_matches_movie_stems_across_extensions():
+    acq = sources.parse_tomostar_dose(
+        "TS|foo.tif|0|3.2000\nTS|bar.tif|3|6.4000\n")
+    joined = sources.join_dose(acq, {"foo.mrc": 7.0, "bar.mrc": 8.0})
+    assert [p["cum_dose"] for p in joined["TS"]["points"]] == [3.2, 6.4]
+
+
+def test_acquisition_cmd_reads_wrpDose_from_the_star_header():
+    script = sources.acquisition_cmd("/run")[2]
+    assert "_wrpDose" in script and "_wrpMovieName" in script
+    assert "---STAR---" in script
+    assert '"$1"/tomostar' in script
 
 
 ALIGN_OUT = "\n".join([

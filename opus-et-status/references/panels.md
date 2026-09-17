@@ -214,15 +214,15 @@ without rewriting it) and the cap is reported as unknown rather than wrong.
 
 ## Dose and alignment
 
-The **mdocs** are the only record of acquisition *order*. In a dose-symmetric
-scheme `ZValue` and tilt angle are different sequences -- `ZValue 0` here is
-tilt -0.005 deg, `ZValue 43` is tilt -44 deg -- so accumulated dose can only
-be reconstructed from the mdoc. Joined to the CTF resolution in WARP's frame
-cache on the movie name, that gives resolution against dose (the damage curve)
-rather than against tilt. `SubFramePath` is reduced to a bare movie name, so a
-Windows path from the microscope PC still joins. The scheme is inferred from
-how often the tilt angle changes sign, and stage drift is the largest move
-from the series' first recorded position.
+Accumulated dose comes from WARP's **tomostar** `_wrpDose`, which is already
+cumulative e⁻/Å² per movie. SerialEM `ExposureDose` is often left at 0, so
+summing the mdoc produces a vertical line at x=0; that field is used only
+when it is actually filled in. Tomostar rows are typically geometric, so
+acquisition order is the `_wrpDose` sort. Joined to the CTF resolution in
+WARP's frame cache on the movie name (stem, so `.tif` still matches `.mrc`),
+that gives resolution against dose (the damage curve) rather than against
+tilt. Stage drift still comes from the mdoc when present. The scheme is
+inferred from how often the tilt angle changes sign in acquisition order.
 
 The **alignment** table reads AreTomo's `.aln` per series: fitted tilt axis,
 per-tilt shift track, and the count of tilts discarded as too dark. WARP's own

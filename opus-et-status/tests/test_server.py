@@ -1085,8 +1085,9 @@ def test_every_tab_button_has_a_panel_and_a_keyboard_shortcut():
 
 
 def test_status_joins_dose_onto_frame_resolution():
-    """The damage curve needs both halves: acquisition order from the mdocs
-    and CTF resolution from WARP's frame cache."""
+    """The damage curve needs both halves: accumulated dose (tomostar
+    `_wrpDose`, or mdoc when ExposureDose is filled) and CTF resolution
+    from WARP's frame cache."""
     p = poller_mod.Poller(
         {"frames": lambda: {"n_frames": 2, "n_series": 0, "metrics": [],
                             "skipped": [], "worst": [], "series": [],

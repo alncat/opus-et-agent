@@ -779,8 +779,8 @@ function renderTmScores(st){
 }
 // --- dose ----------------------------------------------------------------
 // Plotted against accumulated dose rather than tilt angle: in a dose-symmetric
-// scheme those are different orderings, and only the mdoc records which movie
-// was taken when.
+// scheme those are different orderings. WARP's tomostar `_wrpDose` is already
+// cumulative; SerialEM often leaves ExposureDose at 0.
 function doseSvg(pts,mini){
   if(pts.length<3) return '';
   const W=mini?320:640, H=mini?120:180, PL=mini?30:38, PR=10, PT=10, PB=mini?16:28;
@@ -822,8 +822,8 @@ function renderDose(f){
   const el=document.getElementById('frdose'), dose=f.dose||{};
   const keys=Object.keys(dose).sort();
   if(!keys.length){
-    el.innerHTML='<span class="muted">no mdoc files under <code>mdoc/</code>'
-      +' &mdash; acquisition order and dose are only recorded there</span>';
+    el.innerHTML='<span class="muted">no dose in <code>tomostar/</code> or <code>mdoc/</code>'
+      +' &mdash; WARP writes accumulated dose as <code>_wrpDose</code></span>';
     return;
   }
   const all=[];
@@ -848,7 +848,8 @@ function renderDose(f){
       <td class="num">${(dose[k].points||[]).length}</td>
       <td class="num">${dose[k].stage_drift==null?'&mdash;':frFix(dose[k].stage_drift,3)}</td></tr>`).join('')
     +'</table><div class="muted" style="margin-top:.4rem;font-size:.8rem">'
-    +'Read from the SerialEM <code>.mdoc</code> files. In a dose-symmetric scheme the '
+    +'Read from WARP <code>.tomostar</code> <code>_wrpDose</code> (already cumulative e&#8315;/&#8491;&#178;). '
+    +'SerialEM <code>ExposureDose</code> is used only when it is non-zero. In a dose-symmetric scheme the '
     +'acquisition order and the tilt order are different sequences, so low dose means '
     +'low tilt and the two effects compound at the ends.</div>';
 }
@@ -1796,9 +1797,10 @@ def build_status(snapshot, work_dir=None):
     gates = build_gates(run_state)
     attention = build_attention(snapshot, jobs, gates, waiting)
     ds = snapshot.get("disk")
-    # The dose curve needs both halves: acquisition order from the mdocs and
-    # CTF resolution from WARP's frame cache. Copy before popping -- the
-    # snapshot hands out the poller's own cached dicts.
+    # The dose curve needs both halves: accumulated dose from tomostar
+    # `_wrpDose` (mdoc ExposureDose is often 0) and CTF resolution from
+    # WARP's frame cache. Copy before popping -- the snapshot hands out the
+    # poller's own cached dicts.
     fr = snapshot.get("frames")
     frames = dict(fr.data) if fr is not None and fr.data else {}
     by_name = frames.pop("by_name", {})
@@ -2117,9 +2119,10 @@ def main(argv=None):
         # particle XML; binned on the cluster so counts, not floats, cross.
         "tm_scores": lambda: sources.parse_tm_scores(
             client.run(sources.tm_scores_cmd(wd), timeout=180).stdout),
-        # Acquisition order and dose; fixed once the data is imported.
-        "acquisition": lambda: sources.parse_mdoc(
-            client.run(sources.mdoc_cmd(wd), timeout=60).stdout),
+        # Acquisition order and dose from tomostar `_wrpDose`, with mdoc as
+        # fallback when ExposureDose is actually filled in.
+        "acquisition": lambda: sources.parse_acquisition(
+            client.run(sources.acquisition_cmd(wd), timeout=60).stdout),
         "alignment": lambda: sources.parse_align(
             client.run(sources.align_cmd(wd), timeout=90).stdout),
         "disk": lambda: sources.parse_df(

@@ -615,11 +615,13 @@ def _int_or_none(text):
         return None
 
 
-# --- acquisition order and dose (SerialEM mdoc) ----------------------------
-# ZValue is acquisition order, TiltAngle is geometry: in a dose-symmetric
-# scheme they disagree, and only the mdoc records which movie was taken when.
-_MDOC_SH = (
-    'cd "$1"/mdoc 2>/dev/null || exit 0; '
+# --- acquisition order and dose --------------------------------------------
+# SerialEM ZValue is acquisition order, TiltAngle is geometry: in a
+# dose-symmetric scheme they disagree. ExposureDose is often left at 0, so
+# the reliable per-tilt accumulated dose is WARP's tomostar `_wrpDose`
+# (already cumulative e-/Å²). Tomostar rows are typically geometric, so
+# acquisition order is recovered by sorting on `_wrpDose`.
+_MDOC_LOOP = (
     'for f in *.mdoc; do [ -e "$f" ] || continue; '
     '  awk -v T="${f%.mdoc}" \''
     '    /^\\[ZValue/ { split($0,a,"="); z=a[2]+0; seen=1; next } '
@@ -628,16 +630,54 @@ _MDOC_SH = (
     '  "$f"; '
     'done'
 )
+_MDOC_SH = 'cd "$1"/mdoc 2>/dev/null || exit 0; ' + _MDOC_LOOP
+
+# Emits ts|movie|tilt|cum_dose. Column indices come from the STAR header.
+_TOMOSTAR_DOSE_AWK = r'''
+    /^_wrpMovieName/ { split($2,a,"#"); mcol=a[2]+0; next }
+    /^_wrpAngleTilt/ { split($2,a,"#"); tcol=a[2]+0; next }
+    /^_wrpDose/      { split($2,a,"#"); dcol=a[2]+0; next }
+    $1 ~ /^_/ || $1 ~ /^data_/ || $1 ~ /^loop_/ { next }
+    mcol>0 && dcol>0 && NF>=mcol && NF>=dcol {
+      movie=$(mcol); sub(/.*\//,"",movie);
+      tilt=(tcol>0 && NF>=tcol ? $(tcol)+0 : 0);
+      dose=$(dcol)+0;
+      printf "%s|%s|%.4f|%.4f\n", T, movie, tilt, dose
+    }
+'''
 
 
 def mdoc_cmd(work_dir):
     return ["sh", "-c", _MDOC_SH, "_", work_dir]
 
 
+def acquisition_cmd(work_dir):
+    """Mdoc fields, then tomostar `_wrpDose` rows, in one remote call."""
+    script = (
+        '{ cd "$1"/mdoc 2>/dev/null && ' + _MDOC_LOOP + '; }; '
+        'echo ---STAR---; '
+        'for f in "$1"/tomostar/*.tomostar; do [ -e "$f" ] || continue; '
+        '  T=$(basename "$f" .tomostar); '
+        '  awk -v T="$T" ' + shlex.quote(_TOMOSTAR_DOSE_AWK) + ' "$f"; '
+        'done'
+    )
+    return ["sh", "-c", script, "_", work_dir]
+
+
 def _movie_stem(path):
     """SubFramePath may be a Windows path from the microscope PC."""
     name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     return name
+
+
+def _movie_stem_key(name):
+    base = _movie_stem(name)
+    return base.rsplit(".", 1)[0] if "." in base else base
+
+
+def _series_stem(name):
+    n = str(name or "").rsplit("/", 1)[-1]
+    return n[:-4] if n.endswith(".mrc") else n
 
 
 def parse_mdoc(text):
@@ -692,6 +732,82 @@ def parse_mdoc(text):
     return out
 
 
+def _scheme_from_angles(angles):
+    flips = sum(1 for a, b in zip(angles, angles[1:]) if (a < 0) != (b < 0))
+    return "dose-symmetric" if flips > len(angles) / 3 else "continuous"
+
+
+def parse_tomostar_dose(text):
+    """-> same shape as parse_mdoc. `_wrpDose` is already cumulative."""
+    raw = {}
+    for line in text.splitlines():
+        parts = line.split("|")
+        if len(parts) != 4:
+            continue
+        ts, movie, tilt_s, dose_s = parts
+        cum = _float_or_none(dose_s)
+        if not ts or cum is None:
+            continue
+        raw.setdefault(ts, []).append({
+            "movie": _movie_stem(movie),
+            "tilt": _float_or_none(tilt_s),
+            "cum_dose": round(cum, 4),
+        })
+    out = {}
+    for ts, rows in raw.items():
+        # STAR order is typically geometric; acquisition order is dose.
+        rows.sort(key=lambda r: (r["cum_dose"],
+                                 r["tilt"] if r["tilt"] is not None else 0.0))
+        prev, tilts = 0.0, []
+        for i, r in enumerate(rows):
+            tilts.append({
+                "order": i,
+                "tilt": r["tilt"],
+                "dose": round(r["cum_dose"] - prev, 4),
+                "cum_dose": r["cum_dose"],
+                "movie": r["movie"],
+                "time": None,
+                "stage": None,
+            })
+            prev = r["cum_dose"]
+        if not tilts:
+            continue
+        angles = [t["tilt"] for t in tilts if t["tilt"] is not None]
+        out[ts] = {
+            "tilts": tilts,
+            "n": len(tilts),
+            "total_dose": round(tilts[-1]["cum_dose"], 3),
+            "scheme": _scheme_from_angles(angles),
+            "stage_drift": None,
+        }
+    return out
+
+
+def merge_acquisition(mdoc, tomostar):
+    """Prefer tomostar `_wrpDose` when mdoc ExposureDose is missing or zero."""
+    mdoc_by = {_series_stem(k): v for k, v in (mdoc or {}).items()}
+    star_by = {_series_stem(k): v for k, v in (tomostar or {}).items()}
+    out = {}
+    for key in sorted(set(mdoc_by) | set(star_by)):
+        m, s = mdoc_by.get(key), star_by.get(key)
+        mdoc_dead = (not m) or (m.get("total_dose") or 0) == 0
+        if s and mdoc_dead:
+            merged = dict(s)
+            if m:
+                merged["stage_drift"] = m.get("stage_drift")
+            out[key] = merged
+        elif m:
+            out[key] = m
+        elif s:
+            out[key] = s
+    return out
+
+
+def parse_acquisition(text):
+    mdoc_text, _, star_text = (text or "").partition("---STAR---")
+    return merge_acquisition(parse_mdoc(mdoc_text), parse_tomostar_dose(star_text))
+
+
 def _float_or_none(text):
     try:
         return float(str(text).split()[0])
@@ -703,11 +819,22 @@ def join_dose(acquisition, by_name):
     """Acquisition order carries the accumulated dose; the frame cache carries
     the CTF resolution. Joined on the movie name, they give resolution against
     dose -- the radiation-damage curve -- rather than against tilt angle."""
+    exact = dict(by_name or {})
+    stems = {}
+    for k, v in exact.items():
+        stems.setdefault(_movie_stem_key(k), v)
     out = {}
     for ts, entry in (acquisition or {}).items():
         points = []
         for t in entry.get("tilts", []):
-            res = (by_name or {}).get(t["movie"])
+            movie = t.get("movie") or ""
+            if not movie:
+                continue
+            res = exact.get(movie)
+            if res is None:
+                res = exact.get(_movie_stem(movie))
+            if res is None:
+                res = stems.get(_movie_stem_key(movie))
             if res is None:
                 continue
             points.append({"cum_dose": t["cum_dose"], "tilt": t["tilt"],
