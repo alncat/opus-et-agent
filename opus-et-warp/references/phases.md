@@ -47,6 +47,8 @@ done
 
 WarpTools fs_ctf \
     --settings warp_frameseries.settings \
+    --voltage $CTF_VOLTAGE \
+    --cs 2.7 \
     --grid 2x2x1 \
     --range_max $CTF_RANGE_MAX \
     --defocus_max 8 \
@@ -75,6 +77,8 @@ WarpTools fs_motion_and_ctf \
     --m_grid 1x1x3 \
     --c_grid 2x2x1 \
     --c_range_max $CTF_RANGE_MAX \
+    --c_voltage $CTF_VOLTAGE \
+    --c_cs 2.7 \
     --c_defocus_max 8 \
     --c_use_sum \
     --out_averages \
@@ -105,6 +109,8 @@ WarpTools fs_motion_and_ctf \
     --m_grid 1x1x3 \
     --c_grid 2x2x1 \
     --c_range_max $CTF_RANGE_MAX \
+    --c_voltage $CTF_VOLTAGE \
+    --c_cs 2.7 \
     --c_defocus_max 8 \
     --c_use_sum \
     --out_averages \
@@ -132,12 +138,16 @@ WarpTools ts_import \
     --min_intensity 0.3 \
     --output tomostar
 
-# 2. Create tilt series settings (can run before or after ts_import)
+# 2. Create tilt series settings using raw sampling and binning from
+#    warp_frameseries.settings (the stock script reads these automatically).
+#    For example, this project used 1.1845 A raw and --bin 1.
+read -r TS_RAW_ANGPIX TS_BIN < <(python scripts/warp_settings.py sampling warp_frameseries.settings)
 WarpTools create_settings \
     --folder_data tomostar \
     --folder_processing warp_tiltseries \
     --extension "*.tomostar" \
-    --angpix $ANGPIX \
+    --angpix $TS_RAW_ANGPIX \
+    --bin $TS_BIN \
     --exposure $EXPOSURE \
     --tomo_dimensions $TOMO_DIMS \
     --output warp_tiltseries.settings
@@ -199,31 +209,18 @@ AreTomo2 \
 
 Phase 3 does not depend on Phase 2's `TOMO_DIMS` — AreTomo reads the tilt stack directly. But Phase 4 and everything downstream read `warp_tiltseries.settings`, so the settings must reflect the true **unbinned** tomogram size before proceeding.
 
-```bash
-# Read binned dims from any AreTomo output
-headerPyTom warp_tiltseries/tiltstack/TS_XXX/TS_XXX_ali.mrc
-# size: BX BY BZ   ← take these three values
+`warp_update_tomo_dims.slurm` reads every AreTomo `_ali.mrc` header,
+checks that voxel sizes are consistent across the volumes,
+and converts the largest X/Y/Z to raw detector pixels using the voxel size
+recorded in each MRC. For example, with 1.1845 Å raw pixels, a 4.738 Å stack,
+and a 1440 × 1024 × 250 volume at 9.476 Å, the raw
+dimensions are 11520 × 8192 × 2000. WARP and AreTomo may differ by one
+volume voxel because of rounding; validation allows that tolerance.
 
-# Compute unbinned dims
-unbinned_x=$((BX * BINNING_FACTOR))
-unbinned_y=$((BY * BINNING_FACTOR))
-unbinned_z=$((BZ * BINNING_FACTOR))
-NEW_TOMO_DIMS="${unbinned_x}x${unbinned_y}x${unbinned_z}"
-
-# Re-run create_settings with corrected dims
-# Preserve ANGPIX from the existing warp_tiltseries.settings PixelSize.
-ANGPIX=$(sed -n 's/.*Name="PixelSize".*Value="\([0-9.][0-9.]*\)".*/\1/p' warp_tiltseries.settings | head -1)
-WarpTools create_settings \
-    --folder_data tomostar \
-    --folder_processing warp_tiltseries \
-    --extension "*.tomostar" \
-    --angpix $ANGPIX \
-    --exposure $EXPOSURE \
-    --tomo_dimensions "$NEW_TOMO_DIMS" \
-    --output warp_tiltseries.settings
-```
-
-**SLURM:** `sbatch scripts/warp_update_tomo_dims.slurm` — handles the header parse, binning multiply, and settings rewrite in one job. Backs up the previous settings as `warp_tiltseries.settings.before_update`.
+**SLURM:** `sbatch scripts/warp_update_tomo_dims.slurm`. This edits only the
+three `Dimensions` values and saves the prior settings as
+`warp_tiltseries.settings.before_update` (or `.before_update.1`, etc., if a
+backup already exists). It rejects inconsistent frame/tilt sampling.
 
 **Why this matters:** the unbinned `TOMO_DIMS` in `warp_tiltseries.settings`
 defines the coordinate frame used by all later WARP commands; if it doesn't
@@ -241,7 +238,7 @@ WarpTools ts_import_alignments \
 ```
 **SLURM:** `sbatch scripts/warp_import_alignments.slurm`
 
-**Critical:** Use the exact same pixel size as the AreTomo export. The `.xf` and `.tlt` files are in binned pixel units. The SLURM script derives `ALIGN_ANGPIX = ANGPIX × BINNING_FACTOR`; keep `BINNING_FACTOR` identical to `warp_export_stacks.slurm` / AreTomo, and leave `ANGPIX` blank to read `PixelSize` from `warp_tiltseries.settings`.
+**Critical:** Use the exact same pixel size as the AreTomo stack export. The `.xf` and `.tlt` files are in stack-pixel units. Use the configured `ALIGN_ANGPIX` in stack export, alignment import, and reconstruction. `ANGPIX` must be the raw detector sampling recorded in the frame settings, and `ALIGN_ANGPIX = ANGPIX × BINNING_FACTOR`. The scripts check that the alignment pixel is a whole-number multiple of the frame-series working pixel (`PixelSize × 2^BinTimes`). AreTomo `_ali.mrc` voxel size may be larger than the stack/alignment pixel size after explicit `-OutBin` greater than 1 or later resampling.
 
 ---
 
@@ -252,6 +249,9 @@ WarpTools ts_import_alignments \
 WarpTools ts_defocus_hand \
     --settings warp_tiltseries.settings \
     --check
+# Only if it prints exactly one sign and no NaN, exception or "failed" count.
+# If the check fails, set nothing: fix or deselect the failing series first.
+# warp_ts_ctf.slurm does all of this (CTF_HAND=auto) and verifies the result.
 # If output says "average correlation is negative":
 WarpTools ts_defocus_hand \
     --settings warp_tiltseries.settings \
@@ -260,6 +260,8 @@ WarpTools ts_defocus_hand \
 # Step 2: CTF estimation
 WarpTools ts_ctf \
     --settings warp_tiltseries.settings \
+    --voltage $CTF_VOLTAGE \
+    --cs 2.7 \
     --window 512 \
     --range_high 7 \
     --defocus_max 8 \
@@ -273,11 +275,11 @@ WarpTools ts_reconstruct \
     --perdevice 1
 ```
 
-The SLURM script derives `ALIGN_ANGPIX = ANGPIX × BINNING_FACTOR` the same way as Phase 4. Do not hardcode a dataset-specific binned pixel size here.
+The SLURM script uses the same configured `ALIGN_ANGPIX` as stack export and alignment import. It checks that the value is consistent with frame-series sampling.
 
 ### Sanity check: AreTomo vs. WARP reconstruction dims must match
 
-After `ts_reconstruct`, **always verify** that the WARP tomogram has the same binned size as the AreTomo `_ali.mrc`. Both are reconstructed at `ALIGN_ANGPIX`, so their `nx × ny × nz` should be identical. A mismatch means **either** the alignment import failed (Phase 4) **or** `TOMO_DIMS` in the settings is wrong (Phase 3.5 was skipped or used the wrong binning).
+After `ts_reconstruct`, compare physical field of view and density placement with the AreTomo `_ali.mrc`. A later resampling step or AreTomo `-OutBin` greater than 1 can make its output voxel larger than `ALIGN_ANGPIX`, so the voxel counts need not be identical. A direct normalized volume correlation on matched grids is useful for checking imported alignment geometry and angle negation; handedness flags only change the CTF defocus gradient.
 
 ```bash
 # Pick any tilt series
@@ -289,12 +291,14 @@ headerPyTom warp_tiltseries/tiltstack/$TS/${TS}_ali.mrc
 # WARP reconstruction (binned at ALIGN_ANGPIX, from Phase 5; named with pixel-size suffix)
 headerPyTom warp_tiltseries/reconstruction/${TS}_*Apx.mrc
 
-# Both `size:` lines should report the same NX × NY × NZ.
+
 ```
 
+Compare physical dimensions (`N × voxel size`) using each file’s header; voxel counts may differ.
+
 If they differ:
-- **Z mismatch** → Phase 3.5 wasn't run, or `BINNING_FACTOR` in `warp_update_tomo_dims.slurm` doesn't match the AreTomo binning. Re-run Phase 3.5 and Phase 4.
-- **X/Y mismatch** → `TOMO_DIMS` X or Y in settings was wrong. Re-run `create_settings` with the correct unbinned detector size, then Phase 4.
+- **Z/FOV mismatch** → verify raw dimensions, AreTomo header voxel size, and any volume resampling; then rerun Phase 3.5 and Phase 4 if needed.
+- **X/Y FOV mismatch** → check raw dimensions and AreTomo volume header. Use Phase 3.5 to update dimensions while preserving settings, then rerun Phase 4 if needed.
 - **Same size but content looks shifted/cropped** → `--alignment_angpix` in Phase 4 didn't match `ALIGN_ANGPIX` from `ts_stack`. Re-run Phase 4 with the correct value.
 
 **SLURM (step-by-step):**
@@ -314,7 +318,7 @@ TS=TS_026   # any tilt series
 
 echo "ANGPIX (gather, unbinned):       $ANGPIX"
 echo "BINNING_FACTOR:                  $BINNING_FACTOR"
-echo "ALIGN_ANGPIX (= ANGPIX × bin):   $ALIGN_ANGPIX"
+echo "ALIGN_ANGPIX (stack/alignment):   $ALIGN_ANGPIX"
 echo ""
 echo "AreTomo _ali.mrc:"
 headerPyTom warp_tiltseries/tiltstack/$TS/${TS}_ali.mrc | grep -E 'columns|spacing'
@@ -357,9 +361,9 @@ sbatch scripts/extract_tm_candidates_parallel.slurm
 
 # 5. Convert PyTom XML → per-tilt-series STAR (canonical SLURM path)
 sbatch scripts/convert_to_star.slurm
-# Uses PyTom convert.py per file. Fill ANGPIX and BINNING_FACTOR in the script:
-# --pixelSize / ANGPIX: UNBINNED pixel size (coords are written unbinned).
-# --binPyTom / BINNING_FACTOR: binning at which PyTom ran TM, same as AreTomo.
+# Uses PyTom convert.py per file. --pixelSize is COORDS_ANGPIX;
+# --binPyTom is derived from the Origin MRC voxel size / COORDS_ANGPIX.
+# This remains correct if TM volumes were rebinned after AreTomo alignment.
 # Do not use a combined particles.star here.
 
 # 6. Convert STAR → WARP format

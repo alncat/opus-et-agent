@@ -39,7 +39,7 @@ echo "Setting up environment..."
 
 # Load conda and activate environment
 source ~/.bashrc
-conda activate "$WARP_ENV"
+conda activate "$WARP_ENV" || exit 1
 ulimit -v unlimited
 
 # Change to working directory
@@ -64,6 +64,17 @@ echo "============================================================"
 
 # Create tomostar output directory
 mkdir -p "$TOMOSTAR_DIR"
+
+# Frame settings record the actual raw sampling and Fourier pre-binning.
+# Do not substitute a working ANGPIX from pipeline.conf here.
+FS_SAMPLING=$(python "${SCRIPT_DIR}/scripts/warp_settings.py" sampling "${FRAMESERIES_DIR}.settings") || exit 1
+read -r TS_RAW_ANGPIX TS_BIN <<< "$FS_SAMPLING"
+# Refuse a config whose ANGPIX no longer means the imported raw pixel, and
+# refuse to relabel an existing processing tree with different sampling.
+CONTRACT_ARGS=("${FRAMESERIES_DIR}.settings" "$ANGPIX" "$BINNING_FACTOR" "$ALIGN_ANGPIX")
+[ -f "${PROCESSING_DIR}.settings" ] && CONTRACT_ARGS+=(--settings "${PROCESSING_DIR}.settings")
+python "${SCRIPT_DIR}/scripts/warp_settings.py" contract "${CONTRACT_ARGS[@]}" || exit 1
+echo "Using frame-series sampling: ${TS_RAW_ANGPIX} A, --bin ${TS_BIN}"
 
 if [ -z "$TOMO_DIM_X" ] || [ -z "$TOMO_DIM_Y" ]; then
     from_average=0
@@ -113,19 +124,12 @@ PY
     fi
     fnx=$(echo "$frame_dims" | awk '{print $1}')
     fny=$(echo "$frame_dims" | awk '{print $2}')
-    # The WARP frameseries "average" is PRE-BINNED by --bin (a 2^x factor; CreateSettings.cs:
-    # 1 = 2x2, 2 = 4x4) and its MRC header carries no pixel size, so its dims cannot self-report
-    # the binning. Scale them back to UNBINNED using the same factor warp_frameseries_import.slurm
-    # applied (FRAMESERIES_BIN; movie/eer default 1, single-frame 0), so they match the raw ANGPIX
-    # passed to create_settings. Only when auto-read from the average — a user-supplied SAMPLE_FRAME
-    # is taken as-is.
+    # WARP averages are pre-binned; restore dimensions in raw detector pixels.
+    # A user-supplied SAMPLE_FRAME is assumed to be unbinned.
     if [ "$from_average" = "1" ]; then
-        case "$FRAME_MODE" in movie|eer) FS_BIN="${FRAMESERIES_BIN:-1}" ;; *) FS_BIN="${FRAMESERIES_BIN:-0}" ;; esac
-        if awk -v b="$FS_BIN" 'BEGIN{exit !(b>0)}'; then
-            fnx=$(awk -v n="$fnx" -v b="$FS_BIN" 'BEGIN{printf "%.0f", n*(2.0^b)}')
-            fny=$(awk -v n="$fny" -v b="$FS_BIN" 'BEGIN{printf "%.0f", n*(2.0^b)}')
-            echo "Frameseries pre-binned by 2^${FS_BIN}; scaled average dims -> unbinned ${fnx}x${fny}"
-        fi
+        fnx=$(awk -v n="$fnx" -v b="$TS_BIN" 'BEGIN{printf "%.0f", n*(2.0^b)}')
+        fny=$(awk -v n="$fny" -v b="$TS_BIN" 'BEGIN{printf "%.0f", n*(2.0^b)}')
+        echo "Frameseries pre-binned by 2^${TS_BIN}; raw dimensions ${fnx}x${fny}"
     fi
     [ -z "$TOMO_DIM_X" ] && TOMO_DIM_X=$fnx
     [ -z "$TOMO_DIM_Y" ] && TOMO_DIM_Y=$fny
@@ -140,7 +144,7 @@ echo ""
 echo "Parameters:"
 echo "  - Input tomostar: $TOMOSTAR_DIR"
 echo "  - Output directory: $PROCESSING_DIR"
-echo "  - Pixel size: $ANGPIX A"
+echo "  - Raw pixel size: $TS_RAW_ANGPIX A; bin exponent: $TS_BIN"
 echo "  - Exposure: $EXPOSURE e-/A^2"
 echo "  - Tomogram dimensions: ${TOMO_DIM_X}x${TOMO_DIM_Y}x${TOMO_DIM_Z} (unbinned, approximate)"
 
@@ -148,7 +152,8 @@ echo "  - Tomogram dimensions: ${TOMO_DIM_X}x${TOMO_DIM_Y}x${TOMO_DIM_Z} (unbinn
 --folder_data "$TOMOSTAR_DIR" \
 --folder_processing "$PROCESSING_DIR" \
 --extension "*.tomostar" \
---angpix "$ANGPIX" \
+--angpix "$TS_RAW_ANGPIX" \
+--bin "$TS_BIN" \
 --exposure "$EXPOSURE" \
 --tomo_dimensions "${TOMO_DIM_X}x${TOMO_DIM_Y}x${TOMO_DIM_Z}" \
 --output "${PROCESSING_DIR}.settings"
@@ -222,7 +227,7 @@ echo "============================================================"
 echo "End time: $(date)"
 echo ""
 echo "Settings:"
-echo "  - Pixel size: $ANGPIX A"
+echo "  - Raw pixel size: $TS_RAW_ANGPIX A; bin exponent: $TS_BIN"
 echo "  - Exposure: $EXPOSURE e-/A^2"
 echo "  - Tomogram dimensions: ${TOMO_DIM_X}x${TOMO_DIM_Y}x${TOMO_DIM_Z}"
 echo ""

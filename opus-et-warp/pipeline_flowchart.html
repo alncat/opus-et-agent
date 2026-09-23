@@ -107,7 +107,7 @@ flowchart TD
     P4["💻 64G Phase 4<br/>warp_import_alignments.slurm<br/>ts_import_alignments<br/>--alignment_angpix ALIGN_ANGPIX"]
     P3_5_OUT --> P4; P3B_OUT2 --> P4; P3B_OUT3 --> P4; P3_IN --> P4
 
-    P5A["🎮4 256G Phase 5a<br/>warp_ts_ctf.slurm<br/>ts_defocus_hand --set_auto<br/>ts_ctf"]
+    P5A["🎮4 256G Phase 5a<br/>warp_ts_ctf.slurm<br/>ts_defocus_hand --check → set + verify<br/>ts_ctf --voltage"]
     P5B["🎮4 256G Phase 5b<br/>warp_ts_reconstruct.slurm<br/>ts_reconstruct --angpix ALIGN_ANGPIX"]
     P5B_OUT[("reconstruction/TS_XXX_apixApx.mrc<br/>binned at ALIGN_ANGPIX")]
     P4 --> P5A; P5A --> P5B; P3_IN --> P5B; P5B --> P5B_OUT
@@ -133,7 +133,7 @@ flowchart TD
     P6E_OUT[("particles/TS_XXX_particles.xml<br/>TS_XXX_extraction.log")]
     P6D_OUT --> P6E; P6E --> P6E_OUT
 
-    P6F["💻 64G Phase 6f<br/>convert_to_star.slurm<br/>convert.py<br/>--pixelSize ANGPIX (unbinned)<br/>--binPyTom BINNING_FACTOR"]
+    P6F["💻 64G Phase 6f<br/>convert_to_star.slurm<br/>convert.py<br/>--pixelSize COORDS_ANGPIX<br/>--binPyTom Origin MRC voxel / COORDS_ANGPIX"]
     P6F_OUT[("star_files/TS_XXX.star")]
     P6E_OUT --> P6F; P6F --> P6F_OUT
 
@@ -228,7 +228,7 @@ flowchart LR
     H --> I["Phase 5: ts_reconstruct --angpix ALIGN_ANGPIX"]
     C --> J["Phase 6: Template/Mask at ALIGN_ANGPIX"]
     J --> K["TM on _ali.mrc"]
-    K --> L["convert.py: --pixelSize ANGPIX --binPyTom BINNING → unbinned"]
+    K --> L["convert.py: --pixelSize COORDS_ANGPIX --binPyTom MRC voxel / COORDS_ANGPIX"]
     I --> M["Phase 7: ts_export_particles --output_angpix OUTPUT_ANGPIX (species) --coords_angpix COORDS_ANGPIX (pipeline)"]
     M --> N["Phase 8: train_tomo_dist → opuset/TM_LABEL/zZDIM/"]
 

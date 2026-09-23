@@ -37,7 +37,7 @@ echo ""
 echo "Setting up environment..."
 
 source ~/.bashrc
-conda activate "$WARP_ENV"
+conda activate "$WARP_ENV" || exit 1
 ulimit -v unlimited
 
 export LD_LIBRARY_PATH="${CONDA_LIB}:${WARP_DIR}:$LD_LIBRARY_PATH"
@@ -62,20 +62,17 @@ if [ ! -f "$TILTSERIES_SETTINGS" ]; then
     exit 1
 fi
 
-if [ -z "$ANGPIX" ]; then
-    ANGPIX=$(sed -n 's/.*Name="PixelSize".*Value="\([0-9.][0-9.]*\)".*/\1/p' "$TILTSERIES_SETTINGS" | head -1)
-fi
-if [[ "$ANGPIX" == \<* ]] || [ -z "$ANGPIX" ]; then
-    echo "ERROR: Could not determine ANGPIX from $TILTSERIES_SETTINGS. Expected a line like:"
-    echo '       <Param Name="PixelSize" Value="1.96" />'
-    echo "       Set ANGPIX manually if the settings format differs."
+# ALIGN_ANGPIX is the stack/alignment/reconstruction sampling. Its source is
+# pipeline.conf; do not derive it again from WARP's raw PixelSize.
+if [ -z "${ALIGN_ANGPIX:-}" ]; then
+    echo "ERROR: Set ALIGN_ANGPIX in pipeline.conf (or derive it there from ANGPIX and BINNING_FACTOR)."
     exit 1
 fi
-if [[ "$BINNING_FACTOR" == \<* ]] || [ -z "$BINNING_FACTOR" ]; then
-    echo "ERROR: Set BINNING_FACTOR to the same binning used by warp_export_stacks.slurm / AreTomo."
-    exit 1
-fi
-ALIGN_ANGPIX=$(awk "BEGIN {printf \"%.6f\", $ANGPIX * $BINNING_FACTOR}")
+python "${SCRIPT_DIR}/scripts/warp_settings.py" contract \
+    "${FRAMESERIES_DIR}.settings" "$ANGPIX" "$BINNING_FACTOR" "$ALIGN_ANGPIX" \
+    --settings "$TILTSERIES_SETTINGS" || exit 1
+TS_RAW_ANGPIX=$(python "${SCRIPT_DIR}/scripts/warp_settings.py" sampling "$TILTSERIES_SETTINGS") || exit 1
+TS_RAW_ANGPIX=${TS_RAW_ANGPIX%% *}
 
 # Check alignments directory exists
 if [ ! -d "$TILTSTACK_DIR" ]; then
@@ -107,7 +104,7 @@ echo "Settings file: $TILTSERIES_SETTINGS"
 echo "Alignments directory: $TILTSTACK_DIR"
 echo ""
 echo "Pixel sizes:"
-echo "  - Original (unbinned): $ANGPIX A"
+echo "  - Raw (unbinned): $TS_RAW_ANGPIX A"
 echo "  - Binned (for alignment): $ALIGN_ANGPIX A"
 echo ""
 echo "IMPORTANT: Using binned pixel size ($ALIGN_ANGPIX A)"

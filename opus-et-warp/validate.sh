@@ -285,7 +285,7 @@ phase_required_vars() {
         6c) echo "WORK_DIR TOMOSTAR_DIR TILTSTACK_DIR TEMPLATE_MRC TM_MASK_MRC ANGLE_LIST DEFAULT_Z_START TM_LABEL" | tr ' ' '\n' ;;
         6d) echo "WORK_DIR TM_JOBS_DIR TM_SPLIT_X TM_SPLIT_Y TM_SPLIT_Z" | tr ' ' '\n' ;;
         6e) echo "WORK_DIR TM_JOBS_DIR TM_PARTICLES_DIR NUM_CANDIDATES EXTRACT_MASK_RADIUS TEMPLATE MIN_SCORE" | tr ' ' '\n' ;;
-        6f) echo "WORK_DIR TM_PARTICLES_DIR TM_STAR_DIR ANGPIX BINNING_FACTOR" | tr ' ' '\n' ;;
+        6f) echo "WORK_DIR TM_PARTICLES_DIR TM_STAR_DIR ANGPIX BINNING_FACTOR COORDS_ANGPIX" | tr ' ' '\n' ;;
         6g) echo "WORK_DIR TM_STAR_DIR TM_WARP_DIR OPUSET_ENV" | tr ' ' '\n' ;;
     esac
 }
@@ -565,33 +565,18 @@ echo "  TOMO_DIMS:        ${TOMO_DIM_X:-?} × ${TOMO_DIM_Y:-?} × ${TOMO_DIM_Z:-
 
 # If AreTomo output exists, show actual binned dims
 ali_sample=$(find "$TILTSTACK_DIR" -name "*_ali.mrc" -type f -print -quit 2>/dev/null)
-if [ -n "$ali_sample" ]; then
-    ali_info=$(conda run -n "$PYTOM_ENV" headerPyTom "$ali_sample" 2>/dev/null | grep 'Number of columns' || true)
-    if [ -n "$ali_info" ]; then
-        bnx=$(echo "$ali_info" | awk '{print $(NF-2)}')
-        bny=$(echo "$ali_info" | awk '{print $(NF-1)}')
-        bnz=$(echo "$ali_info" | awk '{print $NF}')
-        echo "  AreTomo output:   ${bnx} × ${bny} × ${bnz} (binned at ${BINNING_FACTOR}x, from $(basename "$(dirname "$ali_sample")"))"
-    fi
-fi
-
-# Show WARP settings TOMO_DIMS for comparison
-if [ -f "$TILTSERIES_SETTINGS" ]; then
-    wx=$(sed -n 's/.*Name="DimensionsX".*Value="\([0-9.]*\)".*/\1/p' "$TILTSERIES_SETTINGS" | head -1)
-    wy=$(sed -n 's/.*Name="DimensionsY".*Value="\([0-9.]*\)".*/\1/p' "$TILTSERIES_SETTINGS" | head -1)
-    wz=$(sed -n 's/.*Name="DimensionsZ".*Value="\([0-9.]*\)".*/\1/p' "$TILTSERIES_SETTINGS" | head -1)
-    if [ -n "$wx" ] && [ -n "$wy" ] && [ -n "$wz" ]; then
-        echo "  WARP settings:    ${wx} × ${wy} × ${wz} (unbinned, from warp_tiltseries.settings)"
-        if [ -n "$bnx" ]; then
-            expected_unbinned_x=$((bnx * BINNING_FACTOR))
-            expected_unbinned_y=$((bny * BINNING_FACTOR))
-            expected_unbinned_z=$((bnz * BINNING_FACTOR))
-            if [ "$wx" = "$expected_unbinned_x" ] && [ "$wy" = "$expected_unbinned_y" ] && [ "$wz" = "$expected_unbinned_z" ]; then
-                pass "WARP settings match AreTomo output (Phase 3.5 done ✓)"
-            else
-                warn "WARP settings ($wx × $wy × $wz) ≠ AreTomo × bin ($expected_unbinned_x × $expected_unbinned_y × $expected_unbinned_z) — run Phase 3.5!"
-            fi
-        fi
+if [ -n "$ali_sample" ] && [ -f "$TILTSERIES_SETTINGS" ]; then
+    ali_files=()
+    while IFS= read -r -d '' ali_file; do
+        ali_files+=("$ali_file")
+    done < <(find "$TILTSTACK_DIR" -name "*_ali.mrc" -type f -print0)
+    if check_output=$(conda run -n "$PYTOM_ENV" python \
+        "$SCRIPTS/warp_settings.py" check-dimensions \
+        "$TILTSERIES_SETTINGS" "${FRAMESERIES_DIR}.settings" \
+        "$ALIGN_ANGPIX" "${ali_files[@]}" 2>&1); then
+        pass "$check_output (Phase 3.5 done)"
+    else
+        fail "Phase 3.5 geometry mismatch: $check_output"
     fi
 fi
 
@@ -601,6 +586,26 @@ if need_species; then
     echo "  SUBTOMO_BOX_SIZE: $SUBTOMO_BOX_SIZE px (at OUTPUT_ANGPIX)"
     echo "  ANGPIX_RESAMPLE:  $ANGPIX_RESAMPLE Å (M refinement working px; default=ANGPIX, set coarser for speed)"
     echo "  TEMPLATERES:      $TEMPLATERES px"
+fi
+
+# Sampling contract: ANGPIX stays the raw pixel recorded at frame import, and
+# ALIGN_ANGPIX = ANGPIX × BINNING_FACTOR. Replacing ANGPIX with a working pixel
+# size after import is the 2026-09 bug; every WARP/TM phase script refuses it too.
+if [ -f "${FRAMESERIES_DIR}.settings" ]; then
+    contract_args=("${FRAMESERIES_DIR}.settings" "$ANGPIX" "$BINNING_FACTOR" "$ALIGN_ANGPIX")
+    [ -f "$TILTSERIES_SETTINGS" ] && contract_args+=(--settings "$TILTSERIES_SETTINGS")
+    if contract_output=$(python3 "$SCRIPTS/warp_settings.py" contract "${contract_args[@]}" 2>&1); then
+        pass "$contract_output"
+    else
+        fail "Sampling contract: $contract_output"
+    fi
+fi
+
+# CTF_VOLTAGE has no default: WARP would silently fit at 300 kV
+if [[ "${CTF_VOLTAGE:-}" =~ ^(80|100|120|200|300)$ ]]; then
+    pass "CTF_VOLTAGE=$CTF_VOLTAGE kV"
+else
+    fail "CTF_VOLTAGE='${CTF_VOLTAGE:-}' must be set to the microscope voltage (80, 100, 120, 200 or 300 kV)"
 fi
 
 # CTF_RANGE_MAX ≥ 2×ANGPIX
@@ -772,9 +777,9 @@ if [ "$DRY_RUN" != "1" ]; then
             yellow "  ⚠ Both Phase 3 and Phase 5 complete — visually verify they match:"
             echo "     headerPyTom warp_tiltseries/tiltstack/TS_XXX/TS_XXX_ali.mrc"
             echo "     headerPyTom warp_tiltseries/reconstruction/TS_XXX_*Apx.mrc"
-            echo "     Both must have identical nx × ny × nz (both at ALIGN_ANGPIX),"
+            echo "     Compare physical dimensions: N × voxel size (AreTomo may use OutBin)."
             echo "     and similar reconstruction at every slice."
-            echo "     Mismatch → Phase 3.5 skipped or --alignment_angpix wrong in Phase 4."
+            echo "     Density mismatch → inspect angle negation and imported alignments."
         fi
     fi
 
@@ -874,29 +879,12 @@ if [ "$DRY_RUN" = "1" ]; then
     case "${PHASE:-all}" in
         3a) echo "  WarpTools ts_stack --angpix $ALIGN_ANGPIX" ;;
         3b) echo "  AreTomo2 -InMrc TS_XXX.st -OutMrc TS_XXX_ali.mrc -VolZ $((TOMO_DIM_Z / BINNING_FACTOR)) -AlignZ $((TOMO_DIM_Z / BINNING_FACTOR * 40 / 100)) -AngFile TS_XXX_neg.rawtlt" ;;
-        3.5)
-            ali_sample=$(find "$TILTSTACK_DIR" -name "*_ali.mrc" -type f -print -quit 2>/dev/null)
-            if [ -n "$ali_sample" ]; then
-                ali_info=$(conda run -n "$PYTOM_ENV" headerPyTom "$ali_sample" 2>/dev/null | grep 'Number of columns' || true)
-                if [ -n "$ali_info" ]; then
-                    bnx=$(echo "$ali_info" | awk '{print $(NF-2)}')
-                    bny=$(echo "$ali_info" | awk '{print $(NF-1)}')
-                    bnz=$(echo "$ali_info" | awk '{print $NF}')
-                    ux=$((bnx * BINNING_FACTOR)); uy=$((bny * BINNING_FACTOR)); uz=$((bnz * BINNING_FACTOR))
-                    echo "  WarpTools create_settings --tomo_dimensions ${ux}x${uy}x${uz} --output warp_tiltseries.settings"
-                    echo "    (derived from AreTomo ${bnx}x${bny}x${bnz} × BINNING=$BINNING_FACTOR)"
-                else
-                    echo "  WarpTools create_settings --tomo_dimensions <from _ali.mrc × $BINNING_FACTOR> --output warp_tiltseries.settings"
-                fi
-            else
-                echo "  WarpTools create_settings --tomo_dimensions <from _ali.mrc × $BINNING_FACTOR> --output warp_tiltseries.settings"
-            fi
-            ;;
+        3.5) echo "  python scripts/warp_settings.py update-from-mrc <tilt.settings> <frame.settings> $ALIGN_ANGPIX <AreTomo _ali.mrc files>" ;;
         3)   echo "  WarpTools ts_stack --angpix $ALIGN_ANGPIX"; echo "  AreTomo2 ... -AngFile TS_XXX_neg.rawtlt" ;;
         4)   echo "  WarpTools ts_import_alignments --alignment_angpix $ALIGN_ANGPIX" ;;
-        5a)  echo "  WarpTools ts_defocus_hand --set_auto && WarpTools ts_ctf --range_high $CTF_RANGE_MAX" ;;
+        5a)  echo "  WarpTools ts_defocus_hand --check  (CTF_HAND=${CTF_HAND:-auto}; stops on failure, NaN or ambiguity)"; echo "  WarpTools ts_defocus_hand --set_flip|--set_noflip && WarpTools ts_ctf --voltage ${CTF_VOLTAGE:-?} --range_high $CTF_RANGE_MAX" ;;
         5b)  echo "  WarpTools ts_reconstruct --angpix $ALIGN_ANGPIX" ;;
-        5)   echo "  WarpTools ts_defocus_hand --set_auto && WarpTools ts_ctf --range_high $CTF_RANGE_MAX"; echo "  WarpTools ts_reconstruct --angpix $ALIGN_ANGPIX" ;;
+        5)   echo "  WarpTools ts_defocus_hand --check  (CTF_HAND=${CTF_HAND:-auto}; stops on failure, NaN or ambiguity)"; echo "  WarpTools ts_defocus_hand --set_flip|--set_noflip && WarpTools ts_ctf --voltage ${CTF_VOLTAGE:-?} --range_high $CTF_RANGE_MAX"; echo "  WarpTools ts_reconstruct --angpix $ALIGN_ANGPIX" ;;
         6a)  echo "  create_template.py -f '$INPUT_MRC' -d '$TEMPLATES_DIR' -o '${TM_LABEL}_tm.mrc' -s $ANGPIX --map-spacing $MAP_ANGPIX -b $BINNING_FACTOR -x $TM_BOX_SIZE" ;;
         6b)
             if [ -f "$TEMPLATE_MRC" ]; then
@@ -914,7 +902,7 @@ if [ "$DRY_RUN" = "1" ]; then
         6c)  echo "  Loop tomostar/*.tomostar → job.xml per TS_XXX (gen_tm_jobs_aretomo.slurm)" ;;
         6d)  echo "  mpiexec -n 4 localization.py -j job.xml -x ${TM_SPLIT_X:-2} -y ${TM_SPLIT_Y:-2} -z ${TM_SPLIT_Z:-1} --gpuID 0,1,2,3   (per TS_XXX)" ;;
         6e)  echo "  extractCandidates.py --tm-dir ... --num-candidates $NUM_CANDIDATES --mask-radius ${EXTRACT_MASK_RADIUS:-14} --template $TEMPLATE"; echo "    → reads scores_${TEMPLATE}.em / angles_${TEMPLATE}.em per TS" ;;
-        6f)  echo "  convert.py -f TS_XXX_particles.xml --outname TS_XXX.star --pixelSize $ANGPIX --binPyTom $BINNING_FACTOR -o star" ;;
+        6f)  echo "  convert.py -f TS_XXX_particles.xml --outname TS_XXX.star --pixelSize $COORDS_ANGPIX --binPyTom <Origin MRC voxel / COORDS_ANGPIX> -o star" ;;
         6g)  echo "  dsdsh convert_pytom TS_XXX.star TS_XXX   (→ TS_XXX_warp.star)" ;;
         6)
             echo "  create_template.py -f '$INPUT_MRC' -d '$TEMPLATES_DIR' -o '${TM_LABEL}_tm.mrc' -s $ANGPIX --map-spacing $MAP_ANGPIX -b $BINNING_FACTOR -x $TM_BOX_SIZE"
@@ -922,7 +910,7 @@ if [ "$DRY_RUN" = "1" ]; then
             echo "  gen_tm_jobs_aretomo.slurm → job.xml per TS_XXX"
             echo "  mpiexec -n 4 localization.py -j job.xml -x ${TM_SPLIT_X:-2} -y ${TM_SPLIT_Y:-2} -z ${TM_SPLIT_Z:-1} --gpuID 0,1,2,3   (per TS_XXX)"
             echo "  extractCandidates.py --tm-dir ... --num-candidates $NUM_CANDIDATES --mask-radius ${EXTRACT_MASK_RADIUS:-14} --template $TEMPLATE"
-            echo "  convert.py -f TS_XXX_particles.xml --outname TS_XXX.star --pixelSize $ANGPIX --binPyTom $BINNING_FACTOR -o star"
+            echo "  convert.py -f TS_XXX_particles.xml --outname TS_XXX.star --pixelSize $COORDS_ANGPIX --binPyTom <Origin MRC voxel / COORDS_ANGPIX> -o star"
             echo "  dsdsh convert_pytom TS_XXX.star TS_XXX   (→ TS_XXX_warp.star)"
             ;;
         7)

@@ -67,15 +67,15 @@ sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_import_alignments.slurm
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_ts_ctf.slurm
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_ts_reconstruct.slurm
 
-# 💡 Verify Phase 3–5 alignment chain: AreTomo vs WARP reconstruction dimensions
-#    Both are at ALIGN_ANGPIX, so nx × ny × nz must match exactly:
+# Verify Phase 3–5 alignment chain: compare physical FOV and density placement.
+# AreTomo output or later resampling can have a different voxel size:
 #
 #      TS=TS_026
 #      headerPyTom warp_tiltseries/tiltstack/$TS/${TS}_ali.mrc | grep 'Number of columns'
 #      headerPyTom warp_tiltseries/reconstruction/${TS}_*Apx.mrc | grep 'Number of columns'
 #
-#    Mismatch → Phase 3.5 skipped, or --alignment_angpix wrong in Phase 4,
-#    or TOMO_DIMS X/Y incorrect. Fix the source, re-run from Phase 3.5/4.
+#    Compare N × voxel size, then normalized volume correlation after matching
+#    grids. Check Phase 3.5 dimensions and imported alignment/angle negation.
 #    Details: references/phases.md § sanity check.
 
 # Phase 6: Template matching
@@ -100,14 +100,14 @@ sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/extract_tm_candidates_parallel.sl
 # convert_to_star.slurm and convert_pytom_to_warp.slurm must use the same
 # TM_LABEL, so they read/write template_matching/$TM_LABEL/star_files and warp_star.
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/convert_to_star.slurm
-# convert_to_star.slurm sources pipeline.conf for ANGPIX (unbinned) and BINNING_FACTOR.
-# These map to convert.py's --pixelSize and --binPyTom. Verify both are set in pipeline.conf.
+# convert_to_star.slurm uses COORDS_ANGPIX for STAR coordinates and reads each
+# PyTOM XML's Origin MRC voxel size to derive convert.py's --binPyTom factor.
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/convert_pytom_to_warp.slurm
 
 # Phase 7: Export subtomograms
 # All variables are in pipeline.conf + species.conf — no per-script editing needed.
 # Verify in species.conf: TM_LABEL, SUBTOMO_BOX_SIZE, DIAMETER, OUTPUT_ANGPIX
-# Verify in pipeline.conf: COORDS_ANGPIX (= ANGPIX)
+# Verify in pipeline.conf: COORDS_ANGPIX matches the converted STAR coordinates.
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_export_particles.slurm
 
 # Phase 8: OPUS-ET training (sub-phases: 8a mask → 8b grad → 8c fixed)
@@ -126,4 +126,3 @@ sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/prepare_m_halfmaps.slurm    # Pha
 **For detailed per-phase commands:** read `references/phases.md`
 
 ---
-

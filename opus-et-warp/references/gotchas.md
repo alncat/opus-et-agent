@@ -317,9 +317,76 @@ docs: <https://warpem.github.io/warp/reference/warptools/api/tilt_series/>):
 
 Recommended flow:
 
-- **Easiest**: just use `--set_auto` once. Single submission, no manual
-  decision based on correlation sign.
+- **Use `warp_ts_ctf.slurm`** (`CTF_HAND=auto`): it runs `--check`, stops on a
+  crash, NaN, "failed" count or ambiguous sign, then applies `--set_flip` /
+  `--set_noflip` and verifies every selected tilt-series XML recorded that hand.
+  Don't use `--set_auto` by hand: one bad series (e.g. a single-tilt series)
+  gives no usable answer, and the old wrapper turned that into a silent "flip".
 - **Manual**: run `--check` first, then re-run with `--set_flip` (negative
-  correlation) or `--set_noflip` (positive correlation).
+  correlation) or `--set_noflip` (positive correlation). If the check fails,
+  set nothing; fix or deselect the failing series first.
 - **Avoid `--set_switch`** unless you genuinely want to toggle state — running
   it twice undoes itself, which is the only re-`sbatch` hazard in this phase.
+
+## Raw sampling and failed handedness checks (2026-09)
+
+Tilt-series settings must use the same `Import/PixelSize` and `Import/BinTimes`
+as the frame-series settings. For the 20260907 K3 data these are **1.1845 Å,
+bin exponent 1**, not 2.369 Å with exponent 0. `warp_tiltseries_setup.slurm`
+reads this pair from `${FRAMESERIES_DIR}.settings` and converts auto-detected
+average dimensions back to raw pixels. Explicit `TOMO_DIM_X/Y/Z` and a supplied
+`SAMPLE_FRAME` remain in raw pixels. A working `ANGPIX` in an older project
+configuration must not be substituted for raw sampling.
+
+**Root cause and guard.** `ANGPIX` had two meanings. Frame import passes it to
+WARP as the raw pixel (1.1845 Å here). The project config was later changed to
+the working pixel (2.369 Å) so that `ANGPIX × BINNING_FACTOR` gave 4.738 Å, and
+tilt-series setup passed that value to WARP as the raw pixel. The two settings
+files then disagreed and nothing compared them. `warp_settings.py contract` now
+enforces one convention in `validate.sh` and at the start of every WARP/TM phase:
+`ANGPIX` equals the frame-series `PixelSize`, `ALIGN_ANGPIX = ANGPIX ×
+BINNING_FACTOR`, `ALIGN_ANGPIX` is a whole multiple of the frame working pixel,
+and the tilt-series sampling matches the frame series. For this K3 data the
+consistent config is `ANGPIX=1.1845`, `BINNING_FACTOR=4` (4.738 Å).
+
+`warp_update_tomo_dims.slurm` checks AreTomo `_ali.mrc` voxel headers and converts
+volume dimensions using `volume_voxel_size / raw_pixel_size` and edits only the three dimension parameters.
+It preserves binning, paths and all other settings and keeps a unique backup.
+The setup, dimension update and CTF scripts reject inconsistent existing
+sampling. Rebuild affected data in a new tree; changing settings does not repair
+previous reconstructions or particle exports.
+
+Set `CTF_VOLTAGE` explicitly (200 kV for Glacios); it has no default because
+WARP silently assumes 300 kV. Frame-series and tilt-series CTF both receive it,
+and `check-voltage` verifies the selected XMLs recorded it: after frame CTF,
+before the hand check (which reads the frame CTF grids), and after tilt-series
+CTF. `CTF_CS` defaults to 2.7 mm. `CTF_HAND=auto` requires a successful, unambiguous check.
+The WARP implementation uses the individual tilt movies' **frame-series local
+CTF grids** (e.g. 2x2x1), so the hand check belongs before tilt-series CTF fitting.
+A failed check, NaN, or ambiguous output stops the script instead of guessing
+“flip.” Diagnose invalid series and frame CTF first. `CTF_HAND=keep` explicitly
+preserves an intentionally chosen handedness; `flip` and `noflip` are explicit
+assignments. These options do not establish the absolute hand of a final map.
+
+`warp_settings.py` must be deployed with the scripts that call it.
+The original 20260907 trees and the isolated `warp_rebuild_v2.slurm` run script
+are historical records; the stock-script fix does not rerun them.
+
+The `AreAnglesInverted` flag in WARP changes the Z/defocus coordinate used for
+CTF, while the XY placement used in reconstruction remains tied to the
+unflipped tilt matrices. A `noflip` result alone does not imply a Z-mirrored
+WARP volume. Compare density against an independently reconstructed AreTomo
+volume to check angle negation and alignment geometry.
+
+AreTomo2 `-OutBin 1` means **no additional binning**. This project's current `_ali.mrc` files are half the original stack width and have
+9.476 Å headers, but their modification times are later than the original
+AreTomo alignment/projection files. The original run log records `-OutBin 1`
+and a 2880-wide input. The 2× size change came from two hand-run scripts on
+2026-09-11, `pipeline/scripts/bin_ali_9p48.sh` (`newstack -bin 2` in XY) and
+`bin_ali_z_250.sh` (`binvol -z 2`), which overwrote every `_ali.mrc` in place.
+`convert_to_star.slurm` reads each PyTOM XML's Origin MRC header and sets
+`--binPyTom` to its voxel size divided by `COORDS_ANGPIX`. Here 9.476 Å MRC
+voxels require a factor of 4 for 2.369 Å STAR coordinates or 8 for 1.1845 Å
+coordinates; `BINNING_FACTOR` alone is not the TM coordinate scale. The
+dimension updater likewise uses measured, consistent MRC voxel sizes and does
+not infer them from `-OutBin`.

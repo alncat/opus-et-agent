@@ -34,89 +34,25 @@ source ~/.bashrc
 cd "$WORK_DIR" || exit 1
 
 # -----------------------------------------------------------------------------
-# Read binned dims from first available _ali.mrc via headerPyTom (PyTOM env)
+# Read every AreTomo volume header. The _ali.mrc may be further binned
+# relative to the tilt stack (this project has 9.476 A _ali files from a
+# 4.738 A alignment stack; -OutBin 1 itself means no extra binning).
+# Validate the actual voxel size before changing any settings.
 # -----------------------------------------------------------------------------
-conda activate "$PYTOM_ENV"
-
-if ! command -v headerPyTom >/dev/null 2>&1; then
-    echo "ERROR: headerPyTom not found after activating PYTOM_ENV=$PYTOM_ENV"
+conda activate "$PYTOM_ENV" || exit 1
+ali_files=()
+while IFS= read -r -d '' ali_file; do
+    ali_files+=("$ali_file")
+done < <(find "$TILTSTACK_DIR" -name "*_ali.mrc" -type f -print0)
+if [ "${#ali_files[@]}" -eq 0 ]; then
+    echo "ERROR: No *_ali.mrc under $TILTSTACK_DIR; run AreTomo first."
     exit 1
 fi
+python "${SCRIPT_DIR}/scripts/warp_settings.py" contract \
+    "${FRAMESERIES_DIR}.settings" "$ANGPIX" "$BINNING_FACTOR" "$ALIGN_ANGPIX" \
+    --settings "$TILTSERIES_SETTINGS" || exit 1
+python "${SCRIPT_DIR}/scripts/warp_settings.py" update-from-mrc \
+    "$TILTSERIES_SETTINGS" "${FRAMESERIES_DIR}.settings" \
+    "$ALIGN_ANGPIX" "${ali_files[@]}" || exit 1
 
-ali_file=$(find "$TILTSTACK_DIR" -name "*_ali.mrc" -type f -print -quit)
-if [ -z "$ali_file" ]; then
-    echo "ERROR: no *_ali.mrc found under $TILTSTACK_DIR — run Phase 3 first."
-    exit 1
-fi
-
-echo "Reading dims from: $ali_file"
-header_output=$(headerPyTom "$ali_file")
-echo "$header_output"
-
-# headerPyTom prints e.g. "Number of columns, rows, sections .....  1440   1024   174"
-# The last three whitespace-separated tokens on that line are NX NY NZ.
-size_line=$(echo "$header_output" | grep 'Number of columns')
-binned_x=$(echo "$size_line" | awk '{print $(NF-2)}')
-binned_y=$(echo "$size_line" | awk '{print $(NF-1)}')
-binned_z=$(echo "$size_line" | awk '{print $NF}')
-
-if [ -z "$binned_x" ] || [ -z "$binned_y" ] || [ -z "$binned_z" ]; then
-    echo "ERROR: failed to parse headerPyTom output. Check format:"
-    echo "$header_output"
-    exit 1
-fi
-
-unbinned_x=$((binned_x * BINNING_FACTOR))
-unbinned_y=$((binned_y * BINNING_FACTOR))
-unbinned_z=$((binned_z * BINNING_FACTOR))
-NEW_TOMO_DIMS="${unbinned_x}x${unbinned_y}x${unbinned_z}"
-
-echo ""
-echo "Binned dims (from AreTomo): ${binned_x} x ${binned_y} x ${binned_z}"
-echo "Binning factor: ${BINNING_FACTOR}x"
-echo "Unbinned TOMO_DIMS: ${NEW_TOMO_DIMS}"
-
-conda deactivate
-
-# -----------------------------------------------------------------------------
-# Re-run create_settings with corrected unbinned dimensions (WARP env)
-# -----------------------------------------------------------------------------
-conda activate "$WARP_ENV"
-ulimit -v unlimited
-export LD_LIBRARY_PATH="${CONDA_LIB}:${WARP_DIR}:$LD_LIBRARY_PATH"
-export PATH="${WARP_DIR}:$PATH"
-export WARP_FORCE_MRC_FLOAT32=1
-
-if [ ! -f "$TILTSERIES_SETTINGS" ]; then
-    echo "ERROR: Settings file not found: $TILTSERIES_SETTINGS"
-    echo "       Run Phase 2 first, or set TILTSERIES_SETTINGS correctly."
-    exit 1
-fi
-
-if [ -z "$ANGPIX" ]; then
-    ANGPIX=$(sed -n 's/.*Name="PixelSize".*Value="\([0-9.][0-9.]*\)".*/\1/p' "$TILTSERIES_SETTINGS" | head -1)
-fi
-if [[ "$ANGPIX" == \<* ]] || [ -z "$ANGPIX" ]; then
-    echo "ERROR: Could not preserve PixelSize from $TILTSERIES_SETTINGS. Expected a line like:"
-    echo '       <Param Name="PixelSize" Value="1.96" />'
-    echo "       Set ANGPIX manually if the settings format differs."
-    exit 1
-fi
-echo "Preserving settings PixelSize: ${ANGPIX} A"
-
-# Back up previous settings for safety
-cp "$TILTSERIES_SETTINGS" "${TILTSERIES_SETTINGS}.before_update"
-echo "Backed up existing settings to ${TILTSERIES_SETTINGS}.before_update"
-
-WarpTools create_settings \
---folder_data tomostar \
---folder_processing warp_tiltseries \
---extension "*.tomostar" \
---angpix "$ANGPIX" \
---exposure "$EXPOSURE" \
---tomo_dimensions "$NEW_TOMO_DIMS" \
---output "$TILTSERIES_SETTINGS"
-
-echo ""
-echo "Updated $TILTSERIES_SETTINGS with TOMO_DIMS=${NEW_TOMO_DIMS}"
 echo "You may now run Phase 4: sbatch scripts/warp_import_alignments.slurm"

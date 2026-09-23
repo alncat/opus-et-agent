@@ -43,8 +43,14 @@ echo "Setting up environment..."
 
 # Load conda and activate environment
 source ~/.bashrc
-conda activate "$WARP_ENV"
+conda activate "$WARP_ENV" || exit 1
 ulimit -v unlimited
+
+# WARP defaults to 300 kV; a silent default mis-fits every defocus on 200 kV scopes.
+if ! [[ "${CTF_VOLTAGE:-}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: Set CTF_VOLTAGE explicitly in pipeline.conf (e.g. 200 or 300 kV)."
+    exit 1
+fi
 
 export LD_LIBRARY_PATH="${CONDA_LIB}:${WARP_DIR}:$LD_LIBRARY_PATH"
 export PATH="${WARP_DIR}:$PATH"
@@ -184,6 +190,8 @@ if [ "$FRAME_MODE" = "single" ]; then
 
     "${WARP_DIR}/WarpTools" fs_ctf \
     --settings "${FRAMESERIES_DIR}.settings" \
+    --voltage "$CTF_VOLTAGE" \
+    --cs "${CTF_CS:-2.7}" \
     --grid "$CTF_GRID" \
     --range_max "$CTF_RANGE_MAX" \
     --defocus_max "$CTF_DEFOCUS_MAX" \
@@ -196,6 +204,8 @@ else
     --settings "${FRAMESERIES_DIR}.settings" \
     --m_grid "$MOTION_GRID" \
     --c_grid "$CTF_GRID" \
+    --c_voltage "$CTF_VOLTAGE" \
+    --c_cs "${CTF_CS:-2.7}" \
     --c_range_max "$CTF_RANGE_MAX" \
     --c_defocus_max "$CTF_DEFOCUS_MAX" \
     --c_use_sum \
@@ -207,11 +217,14 @@ fi
 CTF_EXIT_CODE=$?
 
 if [ $CTF_EXIT_CODE -ne 0 ]; then
-    echo "WARNING: CTF estimation may have encountered errors (Exit code: $CTF_EXIT_CODE)"
-else
-    echo ""
-    echo "CTF estimation completed successfully"
+    echo "ERROR: Frame-series CTF estimation failed (exit code: $CTF_EXIT_CODE)."
+    echo "       The tilt-series hand check depends on these local CTF grids."
+    exit 1
 fi
+python "${SCRIPT_DIR}/scripts/warp_settings.py" check-voltage \
+    "${FRAMESERIES_DIR}.settings" "$CTF_VOLTAGE" || exit 1
+echo ""
+echo "CTF estimation completed successfully at $CTF_VOLTAGE kV"
 
 # =============================================================================
 # Summary

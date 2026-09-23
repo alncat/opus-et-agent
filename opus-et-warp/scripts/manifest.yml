@@ -20,6 +20,7 @@ phases:
       - CTF_RANGE_MAX
       - CTF_DEFOCUS_MAX
       - CTF_GRID
+      - CTF_VOLTAGE
     optional_vars:
       - GAIN_FILE
       - DEFECTS_FILE
@@ -196,6 +197,7 @@ phases:
       - CTF_RANGE_MAX
       - CTF_DEFOCUS_MAX
       - CTF_WINDOW
+      - CTF_VOLTAGE
     required_tools:
       - WarpTools
     required_conda:
@@ -204,7 +206,7 @@ phases:
       - reconstruction/TS_XXX_*Apx.mrc
     pre_checks:
       - "Phase 4 alignment data imported"
-      - "Compare AreTomo vs WARP reconstruction dims (must match)"
+      - "Compare AreTomo vs WARP physical dimensions (N × voxel size)"
     per_tomostar_outputs:
       - "_*Apx.mrc"
 
@@ -220,6 +222,7 @@ phases:
       - CTF_RANGE_MAX
       - CTF_DEFOCUS_MAX
       - CTF_WINDOW
+      - CTF_VOLTAGE
     required_tools:
       - WarpTools
     required_conda:
@@ -416,6 +419,7 @@ phases:
       - TM_STAR_DIR
       - ANGPIX
       - BINNING_FACTOR
+      - COORDS_ANGPIX
     required_tools:
       - convert.py
     required_conda:

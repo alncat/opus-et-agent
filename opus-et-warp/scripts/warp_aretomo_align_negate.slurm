@@ -82,7 +82,7 @@ echo ""
 echo "AreTomo2 parameters:"
 echo "  - VolZ: ${VOL_Z} (reconstruction thickness)"
 echo "  - AlignZ: ${ALIGN_Z} (alignment thickness)"
-echo "  - OutBin: 1 (no additional binning)"
+echo "  - OutBin: ${ARETOMO_OUTBIN:-1} (output binning multiplier; 1 = none)"
 echo "  - GPU: ${GPU_ID}"
 
 # Check tiltstack directory
@@ -167,7 +167,7 @@ for stack_file in "${stack_files[@]}"; do
     $ARETOMO_EXE \
     -InMrc "${ts_name}.st" \
     -OutMrc "${ts_name}_ali.mrc" \
-    -OutBin 1 \
+    -OutBin "${ARETOMO_OUTBIN:-1}" \
     -AngFile "${ts_name}_neg.rawtlt" \
     -OutImod 2 \
     -VolZ "$VOL_Z" \

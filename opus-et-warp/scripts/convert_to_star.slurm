@@ -50,6 +50,15 @@ echo "Working directory: $(pwd)"
 echo "Output directory: $TM_STAR_DIR"
 echo ""
 
+# Keep the frame/tilt sampling contract, but derive the PyTOM coordinate scale
+# from the actual TM volume. It may have been rebinned after alignment.
+python "${SCRIPT_DIR}/scripts/warp_settings.py" contract \
+    "${FRAMESERIES_DIR}.settings" "$ANGPIX" "$BINNING_FACTOR" "$ALIGN_ANGPIX" || exit 1
+if [ -z "${COORDS_ANGPIX:-}" ]; then
+    echo "ERROR: Set COORDS_ANGPIX to the pixel size expected by WARP for the input STAR."
+    exit 1
+fi
+
 # Verify convert.py
 echo "Checking PyTom convert.py..."
 if ! which convert.py > /dev/null 2>&1; then
@@ -68,7 +77,10 @@ mkdir -p "$TM_STAR_DIR"
 
 echo "Finding particle XML files..."
 
-mapfile -t XML_FILES < <(find "$TM_PARTICLES_DIR" -name "*_particles.xml" -type f 2>/dev/null | sort)
+XML_FILES=()
+while IFS= read -r xml_file; do
+    XML_FILES+=("$xml_file")
+done < <(find "$TM_PARTICLES_DIR" -name "*_particles.xml" -type f 2>/dev/null | sort)
 
 NUM_FILES=${#XML_FILES[@]}
 
@@ -81,9 +93,22 @@ fi
 
 echo "Found $NUM_FILES particle list(s)"
 echo ""
+
+# Preflight every XML before replacing any STAR. convert.py's --binPyTom is a
+# linear factor: source-MRC voxel size / output-STAR coordinate pixel size.
+TM_FACTORS=()
+for xml_file in "${XML_FILES[@]}"; do
+    if ! factor=$(python "${SCRIPT_DIR}/scripts/warp_settings.py" tm-coordinate-factor \
+        "$xml_file" "$COORDS_ANGPIX"); then
+        echo "ERROR: Cannot determine coordinate scale for $xml_file"
+        exit 1
+    fi
+    TM_FACTORS+=("$factor")
+done
+
 echo "Conversion parameters:"
-echo "  Pixel size: $ANGPIX A"
-echo "  Bin factor: $BINNING_FACTOR"
+echo "  STAR coordinate pixel size: $COORDS_ANGPIX A"
+echo "  PyTOM coordinate factors: derived from each Origin MRC header"
 echo "  Output dir: $TM_STAR_DIR"
 echo ""
 
@@ -94,7 +119,9 @@ echo ""
 COMPLETED=0
 FAILED=0
 
-for xml_file in "${XML_FILES[@]}"; do
+for i in "${!XML_FILES[@]}"; do
+    xml_file="${XML_FILES[$i]}"
+    tm_factor="${TM_FACTORS[$i]}"
     # Get base name
     base_name=$(basename "$xml_file" "_particles.xml")
     star_file="${TM_STAR_DIR}/${base_name}.star"
@@ -103,14 +130,15 @@ for xml_file in "${XML_FILES[@]}"; do
     echo "Converting: $base_name"
     echo "  Input: $xml_file"
     echo "  Output: $star_file"
+    echo "  PyTOM coordinate factor: $tm_factor"
 
     rm -f "$star_file" "${base_name}.star"
     
     if ! convert.py \
     -f "$xml_file" \
     --outname "$star_file" \
-    --pixelSize "$ANGPIX" \
-    --binPyTom "$BINNING_FACTOR" \
+    --pixelSize "$COORDS_ANGPIX" \
+    --binPyTom "$tm_factor" \
     -o star; then
     echo "  ERROR: convert.py failed"
     ((FAILED++))

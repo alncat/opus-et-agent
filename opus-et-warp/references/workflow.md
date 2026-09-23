@@ -57,6 +57,8 @@ done
 ```bash
 WarpTools fs_ctf \
     --settings warp_frameseries.settings \
+    --voltage $CTF_VOLTAGE \
+    --cs 2.7 \
     --grid 2x2x1 \
     --range_max 7 \
     --defocus_max 8
@@ -174,6 +176,8 @@ WarpTools ts_defocus_hand \
     --check
 ```
 
+Only act on a clean result: exactly one sign and no NaN, exception or "failed" count. If the check fails, set nothing; fix or deselect the failing series first. `warp_ts_ctf.slurm` does this (`CTF_HAND=auto`) and verifies the hand WARP recorded.
+
 **If average correlation is negative:**
 ```bash
 WarpTools ts_defocus_hand \
@@ -187,6 +191,8 @@ WarpTools ts_defocus_hand \
 ```bash
 WarpTools ts_ctf \
     --settings warp_tiltseries.settings \
+    --voltage $CTF_VOLTAGE \
+    --cs 2.7 \
     --window 512 \
     --range_high 7 \
     --defocus_max 8
