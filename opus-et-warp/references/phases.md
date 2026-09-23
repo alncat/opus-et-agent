@@ -277,34 +277,49 @@ WarpTools ts_reconstruct \
 
 The SLURM script uses the same configured `ALIGN_ANGPIX` as stack export and alignment import. It checks that the value is consistent with frame-series sampling.
 
-### Sanity check: AreTomo vs. WARP reconstruction dims must match
+### Phase 5c: Image geometry QC (REQUIRED before template matching)
 
-After `ts_reconstruct`, compare physical field of view and density placement with the AreTomo `_ali.mrc`. A later resampling step or AreTomo `-OutBin` greater than 1 can make its output voxel larger than `ALIGN_ANGPIX`, so the voxel counts need not be identical. A direct normalized volume correlation on matched grids is useful for checking imported alignment geometry and angle negation; handedness flags only change the CTF defocus gradient.
+Matching dimensions and headers are not enough. In 2026-09 every numeric check
+passed while WARP reconstructed the central half of every tomogram magnified 2×;
+the raw 0° tilt, the AreTomo projection and the template-matching volume all
+showed the full field. Only comparing the images revealed it.
 
 ```bash
-# Pick any tilt series
-TS=TS_026
-
-# AreTomo reconstruction (binned, from Phase 3)
-headerPyTom warp_tiltseries/tiltstack/$TS/${TS}_ali.mrc
-
-# WARP reconstruction (binned at ALIGN_ANGPIX, from Phase 5; named with pixel-size suffix)
-headerPyTom warp_tiltseries/reconstruction/${TS}_*Apx.mrc
-
-
+sbatch scripts/warp_geometry_qc.slurm
 ```
 
-Compare physical dimensions (`N × voxel size`) using each file’s header; voxel counts may differ.
+For every active tilt series, `geometry_qc.py` puts the raw 0° tilt average,
+the AreTomo `_ali.mrc` (the template-matching volume) and the WARP
+reconstruction on one physical grid, using each file's own pixel size, then
+searches scale (and, for the raw tilt, rotation and mirror). It fails when:
+- the WARP reconstruction or the raw tilt is magnified relative to the AreTomo
+  volume by more than 5% (`scale` 2.0 = the central half at twice the size);
+- the WARP and AreTomo projections agree poorly (|r| < 0.4), or the raw tilt
+  and the AreTomo projection do (|r| < 0.35). Agreement is |r| because a raw
+  tilt and a reconstruction can have opposite contrast. On the 20260907 data,
+  correct pairs scored 0.85–0.89 and 0.68–0.78, unmatched images about 0.14,
+  and the old tree's WARP reconstructions measured exactly 2.00×;
+- the WARP volume matches the Z-mirrored AreTomo volume about as well as the
+  direct one (it measures angle negation and imported geometry, not the CTF
+  hand flag, which moves no density).
 
-If they differ:
-- **Z/FOV mismatch** → verify raw dimensions, AreTomo header voxel size, and any volume resampling; then rerun Phase 3.5 and Phase 4 if needed.
-- **X/Y FOV mismatch** → check raw dimensions and AreTomo volume header. Use Phase 3.5 to update dimensions while preserving settings, then rerun Phase 4 if needed.
-- **Same size but content looks shifted/cropped** → `--alignment_angpix` in Phase 4 didn't match `ALIGN_ANGPIX` from `ts_stack`. Re-run Phase 4 with the correct value.
+Outputs: `gate1_qc/geometry/<TS>_geometry.png` (side-by-side panels for
+review), `<TS>_geometry.json`, and `gate1_qc/geometry_metrics.tsv`. The job
+exits non-zero if any tilt series fails. If one does:
+- **WARP scale ≠ 1, raw tilt scale = 1** → WARP's sampling is wrong: compare
+  tilt-series `PixelSize`/`BinTimes` with the frame settings and check the
+  `ALIGN_ANGPIX` used in Phases 3a, 4 and 5b.
+- **Raw tilt scale ≠ 1** → a pixel size is wrong upstream: the frame settings
+  (`ANGPIX`, `--bin`) or the AreTomo volume header.
+- **Scale = 1 but low r** → alignment import (`--alignment_angpix`, angle
+  negation) or a failed reconstruction; inspect the PNG.
+- **Z-mirror** → angle negation between AreTomo and WARP.
 
 **SLURM (step-by-step):**
 ```bash
 sbatch scripts/warp_ts_ctf.slurm         # Steps 1+2: handedness + CTF
 sbatch scripts/warp_ts_reconstruct.slurm # Step 3: reconstruction
+sbatch scripts/warp_geometry_qc.slurm    # Phase 5c: image geometry QC
 ```
 
 ### End-to-end pixel-size audit

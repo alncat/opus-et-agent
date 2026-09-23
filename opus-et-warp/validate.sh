@@ -226,6 +226,7 @@ phase_scripts() {
         5) echo "warp_ts_ctf.slurm warp_ts_reconstruct.slurm" ;;
         5a) echo "warp_ts_ctf.slurm" ;;
         5b) echo "warp_ts_reconstruct.slurm" ;;
+        5c) echo "warp_geometry_qc.slurm" ;;
         6) echo "gen_template_from_mrc.slurm gen_sphere_mask.slurm gen_tm_jobs_aretomo.slurm run_tm_sequential.slurm extract_tm_candidates_parallel.slurm convert_to_star.slurm convert_pytom_to_warp.slurm" ;;
         6a) echo "gen_template_from_mrc.slurm" ;;
         6b) echo "gen_sphere_mask.slurm" ;;
@@ -743,8 +744,8 @@ if [ "$DRY_RUN" != "1" ]; then
     check_per_ts 5 "WARP reconstruction" \
         "$WORK_DIR/warp_tiltseries/reconstruction/__TS__"_*Apx.mrc
 
-    # After Phase 5, remind user to compare AreTomo vs WARP dims
-    if need_phase 5 || need_phase 7 || [ -z "$PHASE" ]; then
+    # Once both volumes exist, require image geometry QC before Phase 6.
+    if need_phase 5c || [[ "$PHASE" == 6* ]] || need_phase 7 || [ -z "$PHASE" ]; then
         phase3_ok=0; phase5_ok=0; ts_total=0
         # Pre-count for progress bar
         ts_cmp_count=0
@@ -757,7 +758,7 @@ if [ "$DRY_RUN" != "1" ]; then
             ((ts_total++))
             ((ts_cmp_idx++))
             if [ "$PROGRESS_TTY" -eq 1 ]; then
-                progress_bar "$ts_cmp_idx" "$ts_cmp_count" "Comparing Phase 3/5 dims"
+                progress_bar "$ts_cmp_idx" "$ts_cmp_count" "Checking Phase 3/5 outputs"
             fi
             ts_name=$(basename "$ts_file" .tomostar)
             if compgen -G "$TILTSTACK_DIR/$ts_name/${ts_name}_ali.mrc" >/dev/null 2>&1 && \
@@ -774,12 +775,48 @@ if [ "$DRY_RUN" != "1" ]; then
         fi
         if [ "$ts_total" -gt 0 ] && [ "$phase3_ok" -eq "$ts_total" ] && [ "$phase5_ok" -eq "$ts_total" ]; then
             echo ""
-            yellow "  ⚠ Both Phase 3 and Phase 5 complete — visually verify they match:"
-            echo "     headerPyTom warp_tiltseries/tiltstack/TS_XXX/TS_XXX_ali.mrc"
-            echo "     headerPyTom warp_tiltseries/reconstruction/TS_XXX_*Apx.mrc"
-            echo "     Compare physical dimensions: N × voxel size (AreTomo may use OutBin)."
-            echo "     and similar reconstruction at every slice."
-            echo "     Density mismatch → inspect angle negation and imported alignments."
+            # Phase 5c: matching dimensions/headers are not enough (2026-09: WARP
+            # showed a 2x-magnified central half); the image geometry QC decides.
+            geom_done=0
+            geom_tsv="$WORK_DIR/gate1_qc/geometry_metrics.tsv"
+            if [ ! -f "$geom_tsv" ]; then
+                fail "Phase 5c geometry QC not run — sbatch scripts/warp_geometry_qc.slurm before template matching"
+            else
+                geom_fail=$(awk -F'\t' 'NR > 1 && $2 != "pass" {print $1}' "$geom_tsv" | tr '\n' ' ')
+                geom_n=$(awk 'NR > 1' "$geom_tsv" | wc -l | tr -d ' ')
+                if [ -n "$geom_fail" ]; then
+                    fail "Phase 5c geometry QC failed for: $geom_fail (see gate1_qc/geometry/*_geometry.png)"
+                elif [ "$geom_n" -ne "$ts_total" ]; then
+                    fail "Phase 5c geometry QC has $geom_n rows for $ts_total active tilt series — rerun with QC_MAX=0"
+                else
+                    geom_invalid=""
+                    rec_tag=$(awk "BEGIN {printf \"%.2f\", $ALIGN_ANGPIX}")
+                    for ts_file in "$TOMOSTAR_DIR"/*.tomostar; do
+                        [ -f "$ts_file" ] || continue
+                        ts_name=$(basename "$ts_file" .tomostar)
+                        rec="$PROCESSING_DIR/reconstruction/${ts_name}_${rec_tag}Apx.mrc"
+                        ali="$TILTSTACK_DIR/$ts_name/${ts_name}_ali.mrc"
+                        result="$WORK_DIR/gate1_qc/geometry/${ts_name}_geometry.json"
+                        preview="$WORK_DIR/gate1_qc/geometry/${ts_name}_geometry.png"
+                        if ! awk -F'\t' -v ts="$ts_name" 'NR > 1 && $1 == ts {n++; if ($2 == "pass") p++} END {exit !(n == 1 && p == 1)}' "$geom_tsv" || \
+                           [ ! -f "$result" ] || [ ! -s "$preview" ] || [ ! -f "$rec" ] || \
+                           [ "$rec" -nt "$result" ] || [ "$ali" -nt "$result" ] || \
+                           [ "$ts_file" -nt "$result" ] || \
+                           [ "${FRAMESERIES_DIR}.settings" -nt "$result" ] || \
+                           [ "$result" -nt "$geom_tsv" ] || \
+                           ! python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r.get("pass") is True and r.get("warp") == sys.argv[2] and r.get("ali") == sys.argv[3] else 1)' "$result" "$rec" "$ali"; then
+                            geom_invalid="$geom_invalid $ts_name"
+                        fi
+                    done
+                    if [ -n "$geom_invalid" ]; then
+                        fail "Phase 5c geometry QC missing, stale or mismatched for:$geom_invalid — rerun scripts/warp_geometry_qc.slurm"
+                    else
+                        geom_done=$ts_total
+                        pass "Phase 5c geometry QC: raw tilt, AreTomo and WARP agree for all $geom_n tilt series"
+                    fi
+                fi
+            fi
+            json_record phase_completion "image geometry QC" "5c" "$geom_done" "$ts_total"
         fi
     fi
 
@@ -884,6 +921,7 @@ if [ "$DRY_RUN" = "1" ]; then
         4)   echo "  WarpTools ts_import_alignments --alignment_angpix $ALIGN_ANGPIX" ;;
         5a)  echo "  WarpTools ts_defocus_hand --check  (CTF_HAND=${CTF_HAND:-auto}; stops on failure, NaN or ambiguity)"; echo "  WarpTools ts_defocus_hand --set_flip|--set_noflip && WarpTools ts_ctf --voltage ${CTF_VOLTAGE:-?} --range_high $CTF_RANGE_MAX" ;;
         5b)  echo "  WarpTools ts_reconstruct --angpix $ALIGN_ANGPIX" ;;
+        5c)  echo "  python scripts/geometry_qc.py --ali TS_ali.mrc --warp TS_${ALIGN_ANGPIX}Apx.mrc --tomostar TS.tomostar --frame-settings warp_frameseries.settings" ;;
         5)   echo "  WarpTools ts_defocus_hand --check  (CTF_HAND=${CTF_HAND:-auto}; stops on failure, NaN or ambiguity)"; echo "  WarpTools ts_defocus_hand --set_flip|--set_noflip && WarpTools ts_ctf --voltage ${CTF_VOLTAGE:-?} --range_high $CTF_RANGE_MAX"; echo "  WarpTools ts_reconstruct --angpix $ALIGN_ANGPIX" ;;
         6a)  echo "  create_template.py -f '$INPUT_MRC' -d '$TEMPLATES_DIR' -o '${TM_LABEL}_tm.mrc' -s $ANGPIX --map-spacing $MAP_ANGPIX -b $BINNING_FACTOR -x $TM_BOX_SIZE" ;;
         6b)

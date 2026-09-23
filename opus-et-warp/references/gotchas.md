@@ -390,3 +390,13 @@ voxels require a factor of 4 for 2.369 Å STAR coordinates or 8 for 1.1845 Å
 coordinates; `BINNING_FACTOR` alone is not the TM coordinate scale. The
 dimension updater likewise uses measured, consistent MRC voxel sizes and does
 not infer them from `-OutBin`.
+
+### Check the images, not only the numbers (Phase 5c)
+
+The 2026-09 sampling bug passed every numeric check: tomogram dimensions,
+MRC headers and settings all agreed. WARP's reconstruction nevertheless showed
+only the central half of the field, magnified 2×, while the raw 0° tilt, the
+AreTomo projection and the template-matching volume showed the full field. It
+was found by putting those images side by side. `warp_geometry_qc.slurm` now
+does that for every tilt series and fails on a scale error, poor agreement or a
+Z-mirror; Gate 1 requires it before template matching.

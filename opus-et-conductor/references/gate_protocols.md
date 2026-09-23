@@ -17,11 +17,16 @@ decides, and what is written back to config + `.opus_run_state.json`.
   judging alignment/reconstruction quality from its slices (missing-wedge smearing,
   streaking, blank/failed volumes, no recognizable cellular density) and returning a
   per-TS verdict (`good` / `suspect`) with a one-line reason.
-- Optional handedness check: render matched-Z slices of the WARP vs AreTomo
-  reconstruction for one TS and confirm the two agree (no chirality flip) before
-  trusting downstream poses. Save as `gate1_qc/handedness_<TS>.png`.
-- Present: the per-TS verdicts + reasons, the slice previews, and (if run) the
-  handedness montage.
+- **Required geometry check** (Phase 5c, `opus-et-warp/scripts/warp_geometry_qc.slurm`):
+  for every TS, compares the raw 0° tilt, the AreTomo `_ali.mrc` (the TM volume) and
+  the WARP reconstruction in physical units and fails on a scale error, poor agreement
+  or a Z-mirror → `gate1_qc/geometry/<TS>_geometry.{png,json}` +
+  `gate1_qc/geometry_metrics.tsv`. Per-tomogram slice judgement cannot catch this: a
+  WARP volume showing the central half at 2× still looks like a good tomogram (the
+  2026-09 incident). A `FAIL` row blocks the gate for the whole run, not just that TS,
+  since the cause is usually shared sampling or alignment metadata.
+- Present: the per-TS verdicts + reasons, the slice previews, and the geometry
+  metrics table with its side-by-side PNGs.
 - Decide: which tomograms to keep vs. exclude before template matching.
 - Persist: `checkpoints[] {gate:"alignment_qc", kept:[...], excluded:[...]}`. Exclude
   each rejected TS via the keep-list mechanism — relocate `TS.tomostar` →

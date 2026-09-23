@@ -247,6 +247,26 @@ phases:
     outputs:
       - reconstruction/TS_XXX_*Apx.mrc
 
+  5c:
+    description: "Gate 1 image geometry QC — raw 0° tilt vs AreTomo vs WARP (required before Phase 6)"
+    requires_species: false
+    scripts:
+      - warp_geometry_qc.slurm
+    required_vars:
+      - WORK_DIR
+      - TOMOSTAR_DIR
+      - TILTSTACK_DIR
+      - PROCESSING_DIR
+      - FRAMESERIES_DIR
+      - ALIGN_ANGPIX
+      - OPUSET_ENV
+    required_conda:
+      - OPUSET_ENV
+    outputs:
+      - "gate1_qc/geometry/TS_XXX_geometry.png"
+      - "gate1_qc/geometry/TS_XXX_geometry.json"
+      - "gate1_qc/geometry_metrics.tsv"
+
   6:
     description: "Template matching — template, mask, jobs, TM, extract, convert"
     requires_species: true
