@@ -141,6 +141,134 @@ def tm_coordinate_factor(particle_xml, coords_angpix):
             raise ValueError('{} has voxel size {} A, expected {} A'.format(path, voxel[0], voxel_ref))
     return voxel_ref / coords_angpix
 
+# CTF defocus search range and fit sanity. Single low-dose tilts can fit a
+# CTF ring too far out and report a fraction of the true defocus (2026-09: a
+# 4 um target fitted at ~1.3 um, the third ring taken for the first, because
+# WARP's default 0.5 um floor was never overridden). The range must bracket the
+# collection target, and the fits are checked against it afterwards.
+CTF_MARGIN_UM = 1.0        # minimum distance from the target to either bound
+CTF_BELOW_UM = 2.0         # derived range: target - 2 um (floor 0.5) ...
+CTF_ABOVE_UM = 3.0         # ... to target + 3 um
+CTF_ALIAS_UM = 1.5         # a fit this far from its reference is aliased
+CTF_BOUND_TOL_UM = 0.05
+CTF_MAX_BAD_FRACTION = 0.03
+CTF_MAX_BAD_SERIES_FRACTION = 0.20
+
+
+def mdoc_target_defocus(mdoc_dir):
+    """Median |TargetDefocus| over every tilt in the mdocs (SerialEM writes
+    underfocus as negative), or None if no mdoc records it."""
+    values = []
+    for path in sorted(Path(mdoc_dir).glob('*.mdoc')):
+        for line in path.read_text(errors='replace').splitlines():
+            m = re.match(r'\s*TargetDefocus\s*=\s*(\S+)', line)
+            if m:
+                try:
+                    values.append(abs(float(m.group(1))))
+                except ValueError:
+                    pass
+    if not values:
+        return None
+    values.sort()
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def ctf_search_range(target, dmin=None, dmax=None):
+    """-> (min, max) defocus search in um. Blank bounds are derived from the
+    collection target; explicit ones must leave CTF_MARGIN_UM on both sides
+    and may not lower the derived search floor."""
+    if target is None:
+        if dmin is None or dmax is None:
+            raise ValueError('No TargetDefocus in the mdocs: set CTF_DEFOCUS_MIN and '
+                             'CTF_DEFOCUS_MAX to bracket the collection defocus.')
+    else:
+        dmin = max(0.5, target - CTF_BELOW_UM) if dmin is None else dmin
+        dmax = target + CTF_ABOVE_UM if dmax is None else dmax
+        if target - dmin < CTF_MARGIN_UM or dmax - target < CTF_MARGIN_UM:
+            raise ValueError(
+                'CTF defocus search {:g}-{:g} um leaves less than {:g} um around the {:g} um '
+                'collection target (mdoc TargetDefocus). A floor far below the target lets '
+                'low-dose tilts alias to a fraction of the true defocus; a ceiling at the '
+                'target clips real values. Blank CTF_DEFOCUS_MIN/MAX derive {:g}-{:g} um.'
+                .format(dmin, dmax, CTF_MARGIN_UM, target,
+                        max(0.5, target - CTF_BELOW_UM), target + CTF_ABOVE_UM))
+        derived_floor = max(0.5, target - CTF_BELOW_UM)
+        if dmin < derived_floor:
+            raise ValueError(
+                'CTF defocus search floor {:g} um is below the {:g} um floor derived '
+                'from the {:g} um collection target; use a blank CTF_DEFOCUS_MIN '
+                'or raise it to at least {:g} um.'
+                .format(dmin, derived_floor, target, derived_floor))
+    if not 0 < dmin < dmax:
+        raise ValueError('Invalid CTF defocus search {}-{} um'.format(dmin, dmax))
+    return dmin, dmax
+
+
+def check_ctf_fits(settings, kind, dmin, dmax, target=None):
+    """Fail when more than CTF_MAX_BAD_FRACTION of the fits are aliased or sit
+    on a search bound. Frames (one defocus per movie, before tilt series exist)
+    are compared with the collection target, or the run median without one;
+    tilt series with their own per-tilt median."""
+    groups = []
+    for path, root in selected_metadata(settings):
+        if kind == 'frames':
+            node = root.find("./CTF/Param[@Name='Defocus']")
+            if node is not None:
+                groups.append((path.name, [float(node.get('Value'))]))
+        else:
+            grid = root.find('GridCTF')
+            vals = [float(n.get('Value')) for n in grid.findall('Node')] if grid is not None else []
+            if vals:
+                groups.append((path.name, vals))
+    if not groups:
+        raise ValueError('No fitted {} in {}'.format(kind, processing_folder(settings)))
+
+    def median(v):
+        v = sorted(v)
+        return v[len(v) // 2] if len(v) % 2 else (v[len(v) // 2 - 1] + v[len(v) // 2]) / 2
+
+    run_ref = target if target is not None else median([v for _, g in groups for v in g])
+    total, aliased, at_bound, bad_total, worst, bad_series = 0, 0, 0, 0, [], []
+    for name, vals in groups:
+        ref = run_ref if kind == 'frames' else median(vals)
+        a = sum(abs(v - ref) > CTF_ALIAS_UM for v in vals)
+        b = sum(v <= dmin + CTF_BOUND_TOL_UM or v >= dmax - CTF_BOUND_TOL_UM for v in vals)
+        bad = sum(abs(v - ref) > CTF_ALIAS_UM or
+                  v <= dmin + CTF_BOUND_TOL_UM or
+                  v >= dmax - CTF_BOUND_TOL_UM for v in vals)
+        total, aliased, at_bound = total + len(vals), aliased + a, at_bound + b
+        bad_total += bad
+        if a or b:
+            worst.append((bad, name, ref))
+        if kind != 'frames':
+            if bad / len(vals) > CTF_MAX_BAD_SERIES_FRACTION:
+                bad_series.append((bad / len(vals), name, bad, len(vals)))
+    fraction = bad_total / total
+    summary = ('{} {}: {} fits, {} aliased (> {:g} um from {}), {} at the {:g}-{:g} um bounds'
+               .format(len(groups), kind, total, aliased, CTF_ALIAS_UM,
+                       'the target' if kind == 'frames' and target is not None else
+                       'the run median' if kind == 'frames' else 'the series median',
+                       at_bound, dmin, dmax))
+    if fraction > CTF_MAX_BAD_FRACTION or bad_series:
+        worst.sort(reverse=True)
+        shown = ', '.join('{} ({} bad)'.format(n, c) for c, n, _ in worst[:5])
+        bad_series.sort(reverse=True)
+        reasons = []
+        if fraction > CTF_MAX_BAD_FRACTION:
+            reasons.append('{:.1%} exceeds {:.0%} globally'.format(
+                fraction, CTF_MAX_BAD_FRACTION))
+        if bad_series:
+            reasons.append('series over {:.0%}: {}'.format(
+                CTF_MAX_BAD_SERIES_FRACTION,
+                ', '.join('{} ({}/{}, {:.1%})'.format(name, bad, count, rate)
+                          for rate, name, bad, count in bad_series[:5])))
+        raise ValueError('{} -- {}. Worst: {}. Check the defocus search '
+                         'range against the collection target and refit.'
+                         .format(summary, '; '.join(reasons), shown))
+    return summary
+
+
 def volume_dimensions(paths, alignment_angpix):
     import mrcfile
     if not paths:
@@ -254,12 +382,30 @@ def main():
     h = sub.add_parser('check-hand')
     h.add_argument('settings')
     h.add_argument('expected', choices=['flip', 'noflip', 'uniform'])
+    r = sub.add_parser('ctf-range', help='defocus search range from the mdoc TargetDefocus')
+    r.add_argument('mdoc_dir')
+    r.add_argument('--min', default='', help='CTF_DEFOCUS_MIN (blank = derive)')
+    r.add_argument('--max', default='', help='CTF_DEFOCUS_MAX (blank = derive)')
+    g = sub.add_parser('check-ctf-fit', help='fail on aliased or at-bound CTF fits')
+    g.add_argument('settings')
+    g.add_argument('kind', choices=['frames', 'tilts'])
+    g.add_argument('dmin', type=float)
+    g.add_argument('dmax', type=float)
+    g.add_argument('--target', default='')
     f = sub.add_parser('tm-coordinate-factor')
     f.add_argument('particle_xml')
     f.add_argument('coords_angpix', type=float)
     args = p.parse_args()
     try:
-        if args.command == 'contract':
+        if args.command == 'ctf-range':
+            target = mdoc_target_defocus(args.mdoc_dir)
+            dmin, dmax = ctf_search_range(target, float(args.min) if args.min else None,
+                                          float(args.max) if args.max else None)
+            print('{:g} {:g} {}'.format(dmin, dmax, '' if target is None else '{:g}'.format(target)))
+        elif args.command == 'check-ctf-fit':
+            print(check_ctf_fits(args.settings, args.kind, args.dmin, args.dmax,
+                                 float(args.target) if args.target else None))
+        elif args.command == 'contract':
             print('Sampling contract OK: ' + contract(args.frames, args.angpix, args.binning_factor,
                                                      args.alignment_angpix, args.settings))
         elif args.command == 'check-voltage':

@@ -233,7 +233,7 @@ def parse_funnel(text):
 # recomputation -- only the 0.143 crossing of the phase-randomization-corrected
 # column, which is the gold-standard number.
 _M_SH = (
-    'cd "$1"/m 2>/dev/null || exit 0; '
+    'cd "$2" 2>/dev/null || exit 0; '
     'for d in species/*/; do [ -d "$d" ] || continue; '
     '  lab=$(basename "$d"); lab=${lab%_*}; '
     '  f="$d${lab}_fsc.star"; [ -e "$f" ] || continue; '
@@ -247,8 +247,9 @@ _M_SH = (
 )
 
 
-def m_cmd(work_dir):
-    return ["sh", "-c", _M_SH, "_", work_dir]
+def m_cmd(work_dir, dirs=None):
+    """M workspace = M_DIR from pipeline.conf (default <run>/m)."""
+    return ["sh", "-c", _M_SH, "_", work_dir, (dirs or warp_dirs(work_dir))["m"]]
 
 
 def fsc_resolution(rows, column="corrected", threshold=0.143):
@@ -339,14 +340,19 @@ def parse_df(text):
 # "Failed to create CoreCLR"), and the same numbers otherwise live in ~200 MB of
 # per-movie XML where this is 100 KB of JSON.
 _FRAMES_SH = (
-    'cd "$1" || exit 0; '
-    'for d in warp_frameseries warp_tiltseries; do '
-    '  f="$d/processed_items.json"; [ -e "$f" ] || continue; '
-    '  echo "@@$d"; cat "$f"; echo; '
-    'done'
+    'FS=$2; TS=$3; cd "$1" || exit 0; '
+    'f="$FS/processed_items.json"; [ -e "$f" ] && { echo "@@warp_frameseries"; cat "$f"; echo; }; '
+    'f="$TS/processed_items.json"; [ -e "$f" ] && { echo "@@warp_tiltseries"; cat "$f"; echo; }; '
+    # The defocus range each CTF fit actually searched. The main .settings files
+    # only hold WARP's defaults (ZMax 5); the fit writes its own copy.
+    "s=$(ls -t \"$FS\"/*ctf_frameseries.settings \"$FS\"/ctf_movies.settings 2>/dev/null | head -1); "
+    '[ -n "$s" ] && { echo "@@frames_ctf"; grep -oE \'Name="Z(Min|Max)" Value="[^"]*"\' "$s"; }; '
+    's="$TS/ctf_tiltseries.settings"; '
+    '[ -e "$s" ] && { echo "@@tilt_ctf"; grep -oE \'Name="Z(Min|Max)" Value="[^"]*"\' "$s"; }; '
+    'true'
 )
 
-_FRAMES_MARKERS = ("@@warp_frameseries", "@@warp_tiltseries")
+_FRAMES_MARKERS = ("@@warp_frameseries", "@@warp_tiltseries", "@@frames_ctf", "@@tilt_ctf")
 
 # (key, WARP's abbreviation, label, unit). Astigmatism has no single field: WARP
 # stores the two components AsX/AsY, whose magnitude is the DefocusDelta the
@@ -362,8 +368,44 @@ FRAME_METRICS = (
 )
 
 
-def frames_cmd(work_dir):
-    return ["sh", "-c", _FRAMES_SH, "_", work_dir]
+# --- where the WARP trees live -----------------------------------------------
+# A run can move its tilt-series processing to a new tree (a rebuild with fixed
+# sampling, say) while warp_tiltseries/ still exists. Reading a hard-coded
+# warp_tiltseries/ then shows a stale or missing tree, so the folders come from
+# pipeline.conf -- read, never executed -- unless given explicitly.
+DEFAULT_DIRS = {"frames": "warp_frameseries", "tiltseries": "warp_tiltseries",
+                "tiltstack": "warp_tiltseries/tiltstack", "m": "m"}
+_DIR_VARS = {"frames": "FRAMESERIES_DIR", "tiltseries": "PROCESSING_DIR",
+             "tiltstack": "TILTSTACK_DIR", "m": "M_DIR"}
+_WORKDIR_RE = re.compile(r"^\$(?:\{WORK_DIR\}|WORK_DIR)(?=/|$)")
+
+
+def warp_dirs(work_dir, conf=None, overrides=None):
+    """-> {frames, tiltseries, tiltstack, m} absolute paths, each with a
+    `<key>_source` of override / pipeline.conf / default.
+
+    Conf values are used only when they are a literal path or `$WORK_DIR/...`;
+    anything else (another variable, a command substitution) falls back to the
+    default rather than being guessed.
+    """
+    root = str(work_dir).rstrip("/")
+    out = {}
+    for key, var in _DIR_VARS.items():
+        raw, source = ((overrides or {}).get(key) or "").strip(), "override"
+        if not raw and conf and var in conf:
+            value = _WORKDIR_RE.sub(root, (conf[var].value or "").strip())
+            if value and not any(c in value for c in "$`"):
+                raw, source = value, "pipeline.conf"
+        if not raw:
+            raw, source = DEFAULT_DIRS[key], "default"
+        out[key] = (raw if raw.startswith("/") else f"{root}/{raw}").rstrip("/")
+        out[key + "_source"] = source
+    return out
+
+
+def frames_cmd(work_dir, dirs=None):
+    d = dirs or warp_dirs(work_dir)
+    return ["sh", "-c", _FRAMES_SH, "_", work_dir, d["frames"], d["tiltseries"]]
 
 
 def _num(value):
@@ -419,6 +461,105 @@ def _basename(path):
     return str(path or "").rsplit("/", 1)[-1]
 
 
+_Z_RE = re.compile(r'Name="Z(Min|Max)" Value="([^"]*)"')
+
+# Per-series CTF sanity. A tilt series' defocus at the tilt axis moves only by
+# focus drift -- tenths of a micrometre. The failure this catches (2026-09): the
+# search floor was 0.5 um for a 4 um target, and many single low-dose tilts fit
+# at ~1.3 um -- the third CTF ring taken for the first. Fits AT the ceiling are
+# not flagged per tilt: a true defocus can sit there (and WARP's per-movie value
+# can read slightly past it), so the range itself is checked against the target.
+CTF_BOUND_TOL_UM = 0.05
+CTF_BOUND_FRACTION = 0.2
+CTF_OUTLIER_UM = 1.5
+CTF_SPREAD_UM = 0.75
+CTF_TARGET_UM = 1.0
+CTF_RANGE_MARGIN_UM = 1.0
+
+
+def _ctf_bounds(chunk):
+    vals = {}
+    for key, value in _Z_RE.findall(chunk or ""):
+        vals.setdefault(key, _float_or_none(value))
+    lo, hi = vals.get("Min"), vals.get("Max")
+    if lo is None or hi is None or hi <= lo:
+        return None
+    return {"min": lo, "max": hi}
+
+
+def ctf_flags(series, bounds, target=None):
+    """-> [{code, text}] reasons this series' CTF fit looks wrong (empty = fine).
+
+    Uses the per-movie (frame-series) defocus of the series' tilts, the
+    tilt-series fit's minimum, the search floor each fit recorded, and the
+    mdoc TargetDefocus when known.
+    """
+    flags = []
+    d = [v for v in (series.get("defocus_track") or []) if v is not None]
+    fb = (bounds or {}).get("frames")
+    if fb and len(d) >= 3:
+        at_floor = sum(v <= fb["min"] + CTF_BOUND_TOL_UM for v in d)
+        if at_floor >= max(2, CTF_BOUND_FRACTION * len(d)):
+            flags.append({"code": "floor", "text": "%d of %d tilts at the %g um search floor "
+                          "(frame CTF)" % (at_floor, len(d), fb["min"])})
+    tb = (bounds or {}).get("tiltseries")
+    if tb and series.get("defocus_min") is not None \
+            and series["defocus_min"] <= tb["min"] + CTF_BOUND_TOL_UM:
+        flags.append({"code": "floor", "text": "tilt-series fit reaches the %g um search "
+                      "floor" % tb["min"]})
+    if len(d) >= 3:
+        med = _median(d)
+        off = sum(abs(v - med) > CTF_OUTLIER_UM for v in d)
+        if off:
+            flags.append({"code": "outlier", "text": "%d of %d tilts more than %g um from the "
+                          "series median %.1f um (aliased fits?)" % (off, len(d), CTF_OUTLIER_UM, med)})
+        mean = sum(d) / len(d)
+        sd = math.sqrt(sum((v - mean) ** 2 for v in d) / len(d))
+        if sd > CTF_SPREAD_UM:
+            flags.append({"code": "spread", "text": "per-tilt defocus scatters by %.1f um (SD)" % sd})
+    if target and d:
+        med = _median(d)
+        if abs(med - target) > CTF_TARGET_UM:
+            flags.append({"code": "target", "text": "median defocus %.1f um vs the %g um collection "
+                          "target" % (med, target)})
+    return flags
+
+
+def ctf_range_warnings(bounds, target):
+    """A search range that does not bracket the collection target with margin
+    invites aliased or clipped fits for every series -- a run-level problem."""
+    out = []
+    if not target:
+        return out
+    for name, b in (("frame-series", (bounds or {}).get("frames")),
+                    ("tilt-series", (bounds or {}).get("tiltseries"))):
+        if b and (target - b["min"] < CTF_RANGE_MARGIN_UM or b["max"] - target < CTF_RANGE_MARGIN_UM):
+            out.append("%s CTF searched %g-%g um around a %g um collection target "
+                       "(less than %g um margin)" % (name, b["min"], b["max"], target,
+                                                    CTF_RANGE_MARGIN_UM))
+    return out
+
+
+def apply_ctf_targets(frames, acquisition):
+    """Add the mdoc TargetDefocus to each series and re-check it. The frame
+    cache and the mdocs are fetched separately, so this joins them late."""
+    targets = {_series_stem(k): (v or {}).get("target_defocus")
+               for k, v in (acquisition or {}).items()}
+    flagged = 0
+    for s in (frames or {}).get("series") or []:
+        target = targets.get(_series_stem(s.get("name")))
+        s["target_defocus"] = target
+        s["ctf_flags"] = ctf_flags(s, frames.get("ctf_bounds"), target)
+        flagged += bool(s["ctf_flags"])
+    if frames is not None and frames.get("series"):
+        run_target = _median([v for v in targets.values() if v])
+        frames["ctf_check"] = {
+            "n_flagged": flagged, "n_series": len(frames["series"]),
+            "target_defocus": run_target,
+            "range_warnings": ctf_range_warnings(frames.get("ctf_bounds"), run_target)}
+    return frames
+
+
 def parse_frames(text):
     """WARP's quality cache -> histograms per metric plus per-tilt-series rows.
 
@@ -459,14 +600,16 @@ def parse_frames(text):
                 name = name[: -len(suffix)]
         # One CTF resolution per tilt, in acquisition order, so a gap stays a
         # gap: null keeps the remaining tilts at their true position.
-        track = []
+        track, dtrack = [], []
         for tilt in item.get("Tlts") or []:
             row = by_file.get(_basename(tilt))
             if row is None:
                 track.append(None)
+                dtrack.append(None)
                 continue
             row["series"] = name
             track.append(row["resolution"])
+            dtrack.append(row["defocus"])
         series.append({
             "name": name,
             "n_tilts": len(item.get("Tlts") or []),
@@ -483,8 +626,13 @@ def parse_frames(text):
                                           _num(item.get("MaxShiftY")))
                               if v is not None] or [None]),
             "track": track,
+            "defocus_track": dtrack,
         })
     series.sort(key=lambda s: s["name"])
+    bounds = {"frames": _ctf_bounds(chunks.get("frames_ctf")),
+              "tiltseries": _ctf_bounds(chunks.get("tilt_ctf"))}
+    for s in series:
+        s["ctf_flags"] = ctf_flags(s, bounds)
 
     metrics, skipped = [], []
     for key, _abbrev, label, unit in FRAME_METRICS:
@@ -508,7 +656,7 @@ def parse_frames(text):
 
     return {"n_frames": len(frames), "n_series": len(series),
             "metrics": metrics, "skipped": skipped,
-            "worst": worst, "series": series,
+            "worst": worst, "series": series, "ctf_bounds": bounds,
             # Keyed by movie name so the mdoc's acquisition order can be joined
             # onto it; build_status uses this and drops it from the payload.
             "by_name": {f["name"]: f["resolution"] for f in frames
@@ -625,7 +773,7 @@ _MDOC_LOOP = (
     'for f in *.mdoc; do [ -e "$f" ] || continue; '
     '  awk -v T="${f%.mdoc}" \''
     '    /^\\[ZValue/ { split($0,a,"="); z=a[2]+0; seen=1; next } '
-    '    seen && /^(TiltAngle|ExposureDose|SubFramePath|DateTime|StagePosition)[ \\t]*=/ '
+    '    seen && /^(TiltAngle|ExposureDose|SubFramePath|DateTime|StagePosition|TargetDefocus)[ \\t]*=/ '
     '      { v=$0; sub(/^[^=]*=[ \\t]*/,"",v); printf "%s|%d|%s|%s\\n", T, z, $1, v }\' '
     '  "$f"; '
     'done'
@@ -710,6 +858,9 @@ def parse_mdoc(text):
                 "movie": _movie_stem(e.get("SubFramePath")),
                 "time": e.get("DateTime") or None,
                 "stage": [s for s in stage[:2] if s is not None] or None,
+                # SerialEM writes underfocus as negative.
+                "target_defocus": (abs(_float_or_none(e.get("TargetDefocus")))
+                                   if _float_or_none(e.get("TargetDefocus")) is not None else None),
             })
         if not tilts:
             continue
@@ -728,8 +879,18 @@ def parse_mdoc(text):
             "total_dose": round(cum, 3),
             "scheme": "dose-symmetric" if flips > len(angles) / 3 else "continuous",
             "stage_drift": round(drift, 4) if drift is not None else None,
+            "target_defocus": _median([t["target_defocus"] for t in tilts
+                                       if t["target_defocus"] is not None]),
         }
     return out
+
+
+def _median(values):
+    vals = sorted(values)
+    if not vals:
+        return None
+    mid = len(vals) // 2
+    return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2.0
 
 
 def _scheme_from_angles(angles):
@@ -795,6 +956,7 @@ def merge_acquisition(mdoc, tomostar):
             merged = dict(s)
             if m:
                 merged["stage_drift"] = m.get("stage_drift")
+                merged["target_defocus"] = m.get("target_defocus")
             out[key] = merged
         elif m:
             out[key] = m
@@ -851,8 +1013,8 @@ def join_dose(acquisition, by_name):
 # handedness flag and the fitted specimen plane. Both are per tilt series, so
 # they travel in one call.
 _ALIGN_SH = (
-    'cd "$1" || exit 0; '
-    'for d in warp_tiltseries/tiltstack/*/; do [ -d "$d" ] || continue; '
+    'STK=$2; TS=$3; cd "$1" || exit 0; '
+    'for d in "$STK"/*/; do [ -d "$d" ] || continue; '
     '  ts=$(basename "$d"); '
     '  for f in "$d"*.aln; do [ -e "$f" ] || continue; '
     '    awk -v T="$ts" \'/^#/ { if ($0 ~ /DarkFrame/) dark++; next } '
@@ -860,14 +1022,15 @@ _ALIGN_SH = (
     '      END { printf "%s|dark|%d\\n", T, dark+0 }\' "$f"; '
     '    break; '
     '  done; '
-    '  x="warp_tiltseries/${ts}.xml"; [ -e "$x" ] && '
+    '  x="$TS/${ts}.xml"; [ -e "$x" ] && '
     '    printf "%s|xml|%s\\n" "$ts" "$(grep -o \'<TiltSeries [^>]*\' "$x" | head -1)"; '
     'done'
 )
 
 
-def align_cmd(work_dir):
-    return ["sh", "-c", _ALIGN_SH, "_", work_dir]
+def align_cmd(work_dir, dirs=None):
+    d = dirs or warp_dirs(work_dir)
+    return ["sh", "-c", _ALIGN_SH, "_", work_dir, d["tiltstack"], d["tiltseries"]]
 
 
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
@@ -1261,20 +1424,21 @@ def parse_config(text):
 INVENTORY_COLS = ["stack", "aligned", "recon", "tm", "export"]
 
 
-def inventory_cmd(work_dir):
+def inventory_cmd(work_dir, dirs=None):
     """One command flagging stack/align/recon/TM/export per tomostar.
 
     Emits ``name|stack|aligned|recon|tm|export`` with 0/1 flags. TM matches
     any species label; export greps the tilt series in every matching STAR.
     """
     script = (
-        'cd "$1" || exit 0; '
+        # `set --` below reuses the positional parameters, so copy them first.
+        'STK=$2; TS=$3; cd "$1" || exit 0; '
         'for f in tomostar/*.tomostar; do [ -e "$f" ] || continue; '
         'ts=${f##*/}; ts=${ts%.tomostar}; '
-        'd=warp_tiltseries/tiltstack/$ts; '
+        'd=$STK/$ts; '
         'a=0; [ -e "$d/$ts.st" ] && a=1; '
         'b=0; [ -e "$d/${ts}_ali.mrc" ] && b=1; '
-        'c=0; set -- warp_tiltseries/reconstruction/${ts}_*Apx.mrc; '
+        'c=0; set -- "$TS"/reconstruction/${ts}_*Apx.mrc; '
         '[ -e "$1" ] && c=1; '
         'e=0; set -- template_matching/*/warp_star/${ts}_warp.star; '
         '[ -e "$1" ] && e=1; '
@@ -1286,7 +1450,8 @@ def inventory_cmd(work_dir):
         "printf '%s|%d|%d|%d|%d|%d\\n' \"$ts\" \"$a\" \"$b\" \"$c\" \"$e\" \"$g\"; "
         'done'
     )
-    return ["sh", "-c", script, "_", work_dir]
+    d = dirs or warp_dirs(work_dir)
+    return ["sh", "-c", script, "_", work_dir, d["tiltstack"], d["tiltseries"]]
 
 
 def parse_inventory(text):
@@ -1500,13 +1665,13 @@ def _parse_point(rest):
 # someone ran headerPyTom on two files once.
 # ---------------------------------------------------------------------------
 
-def recon_cmd(work_dir):
+def recon_cmd(work_dir, dirs=None):
     # WARP names reconstructions <TS>_<angpix>Apx.mrc -- the pixel size sits
     # before "Apx", so the glob is *Apx.mrc and the name strip peels the
     # shortest _*Apx.mrc suffix.
     script = (
-        'cd "$1" || exit 0; '
-        'for f in warp_tiltseries/reconstruction/*Apx.mrc; do '
+        'TS=$2; cd "$1" || exit 0; '
+        'for f in "$TS"/reconstruction/*Apx.mrc; do '
         '[ -e "$f" ] || continue; '
         'b=${f##*/}; ts=${b%_*Apx.mrc}; '
         'dim=$(dd if="$f" bs=4 skip=0 count=3 2>/dev/null | od -An -t d4 '
@@ -1515,7 +1680,7 @@ def recon_cmd(work_dir):
         '| tr -s " \\n" " "); '
         'echo "RECON $ts $dim $cell"; done'
     )
-    return ["sh", "-c", script, "_", work_dir]
+    return ["sh", "-c", script, "_", work_dir, (dirs or warp_dirs(work_dir))["tiltseries"]]
 
 
 def parse_recon(text):

@@ -121,6 +121,15 @@ WarpTools fs_motion_and_ctf \
 - Gain reference is almost always required for EER; ask the user.
 
 ### Mixed formats in one session
+**Defocus search range.** The SLURM scripts derive the CTF defocus search from the
+mdoc `TargetDefocus` (target-2 .. target+3 um, e.g. 2-7 um for 4 um) unless
+`CTF_DEFOCUS_MIN/MAX` are set, and pass both bounds (`--defocus_min/--defocus_max`,
+`--c_defocus_min/--c_defocus_max`) -- WARP's own 0.5 um floor lets low-dose tilts
+alias to a fraction of the true defocus. An explicit minimum cannot fall below
+the derived floor. After CTF, `check-ctf-fit` stops the job if more than 3% of
+fits across the run, or more than 20% within one tilt series, are aliased or at
+a bound; see gotchas.md.
+
 `create_settings` accepts a single `--extension` pattern. If a session mixes EER and MRC (or different gain references), split into separate frame-series subdirectories and run Phase 1 once per subset, then merge tomostar listings in Phase 2.
 
 **SLURM:** `sbatch scripts/warp_frameseries_import.slurm` — the template covers Option A/B; for EER (Option C) or custom gain flags, add the extra flags in its CONFIGURATION section.

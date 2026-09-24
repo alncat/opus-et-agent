@@ -70,23 +70,23 @@ mask / particles STAR), pointing every invocation at the **same**
 
 ```bash
 MTools create_population \
-    --directory m \
+    --directory "$M_DIR" \
     --name <population_name>
-# → m/<name>.population
+# → $M_DIR/<name>.population  (M_DIR in pipeline.conf, default $WORK_DIR/m)
 ```
 
 ### 2. Create Data Source
 ```bash
 MTools create_source \
     --name <source_name> \
-    --population m/<population>.population \
+    --population "$M_DIR"/<population>.population \
     --processing_settings warp_tiltseries.settings
 ```
 
 ### 3. Create Species
 ```bash
 MTools create_species \
-    --population m/<population>.population \
+    --population "$M_DIR"/<population>.population \
     --name <species_name> \
     --diameter <diameter_Å> \
     --sym <C1|C2|D2|...> \
@@ -109,7 +109,7 @@ MTools create_species \
 **Species naming convention:** WARP appends a hash suffix to the folder:
 ```bash
 # Auto-find species folder:
-SPECIES_DIR=$(find m/species -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
+SPECIES_DIR=$(find "$M_DIR/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
 SPECIES_NAME=$(basename "$SPECIES_DIR")   # e.g., nucleosome_1199b7f2
 ```
 
@@ -123,7 +123,7 @@ SPECIES_BASE=nucleosome_1199b7f2
 ### 4. Run Refinement (MCore)
 ```bash
 MCore \
-    --population m/<population>.population \
+    --population "$M_DIR"/<population>.population \
     --refine_imagewarp 4x4 \
     --refine_particles \
     --ctf_defocus \
@@ -138,7 +138,7 @@ MCore \
 | `--ctf_defocus` | Refine CTF defocus per tilt |
 | `--perdevice_refine 1` | Threads per GPU |
 
-**Output:** refined half maps in `m/species/<name>/<species>_half1.mrc`,
+**Output:** refined half maps in `$M_DIR/species/<name>/<species>_half1.mrc`,
 `<species>_half2.mrc`
 
 ### 5. Update Mask (between refinement passes)
@@ -149,11 +149,11 @@ protein density and excludes solvent — that contour value is the threshold.
 There is no universal default; it depends on map scaling and resolution.
 
 ```bash
-SPECIES_DIR=$(find "$WORK_DIR/m/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
+SPECIES_DIR=$(find "$M_DIR/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
 SPECIES_NAME=$(basename "$SPECIES_DIR")
 
 MTools update_mask \
-    --population m/<population>.population \
+    --population "$M_DIR"/<population>.population \
     --species "${SPECIES_DIR}/${SPECIES_BASE}.species" \
     --map "${SPECIES_DIR}/${SPECIES_BASE}_filt.mrc" \
     --threshold <threshold> \
@@ -168,7 +168,7 @@ MCore writes `<species>_particles.star` in WARP-flavored STAR format, but
 is therefore a two-step pipeline:
 
 ```bash
-SPECIES_DIR=$(find "$WORK_DIR/m/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
+SPECIES_DIR=$(find "$M_DIR/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
 
 # Step 1: convert WARP-style particles.star → RELION-style relion.star
 for ps in "${SPECIES_DIR}"/*_particles.star; do
@@ -180,7 +180,7 @@ WarpTools ts_export_particles \
     --settings warp_tiltseries.settings \
     --input_directory "$SPECIES_DIR" \
     --input_pattern "*_relion.star" \
-    --output_star "warp_tiltseries/${SPECIES_NAME}_matching_refined.star" \
+    --output_star "$PROCESSING_DIR/${SPECIES_NAME}_matching_refined.star" \
     --output_angpix $OUTPUT_ANGPIX \
     --box $SUBTOMO_BOX_SIZE \
     --diameter $DIAMETER \
@@ -236,7 +236,7 @@ sbatch scripts/warp_m_export.slurm            # re-export one converged species;
 *after* a pass has completed and only matters *before* a subsequent pass.
 
 Scripts auto-resolve the WARP-appended `_<hash>` suffix on `SPECIES_BASE` via
-`find m/species -name "${SPECIES_BASE}_*"`, but export scripts deliberately fail
+`find "$M_DIR/species" -name "${SPECIES_BASE}_*"`, but export scripts deliberately fail
 when that pattern matches multiple directories. In that case, set
 `SPECIES_BASE` to the full `<species>_<hash>` directory name.
 

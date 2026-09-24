@@ -18,7 +18,7 @@ phases:
       - FILE_EXTENSION
       - FRAME_MODE
       - CTF_RANGE_MAX
-      - CTF_DEFOCUS_MAX
+      - MDOC_DIR
       - CTF_GRID
       - CTF_VOLTAGE
     optional_vars:
@@ -195,7 +195,7 @@ phases:
       - CONDA_LIB
       - BINNING_FACTOR
       - CTF_RANGE_MAX
-      - CTF_DEFOCUS_MAX
+      - MDOC_DIR
       - CTF_WINDOW
       - CTF_VOLTAGE
     required_tools:
@@ -220,7 +220,7 @@ phases:
       - WARP_DIR
       - CONDA_LIB
       - CTF_RANGE_MAX
-      - CTF_DEFOCUS_MAX
+      - MDOC_DIR
       - CTF_WINDOW
       - CTF_VOLTAGE
     required_tools:

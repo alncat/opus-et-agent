@@ -76,12 +76,12 @@ one series whose resolution falls off differently from the rest.
 | Visual QC images | `qc/`, `gate1_qc/` … `gate4_qc/` | 300 s |
 | Inventory matrix | filesystem checks in the run dir | 120 s |
 | Training runs + loss curves | `opuset/**/weights.*.pkl`, `loss.txt`, `logs/` | 120 s |
-| Recon headers (dims, voxel) | `warp_tiltseries/reconstruction/*Apx.mrc` | 300 s |
+| Recon headers (dims, voxel) | `<tilt-series dir>/reconstruction/*Apx.mrc` | 300 s |
 | Attention strip | derived from jobs, run state, gates, disk | with each poll |
-| Frame quality histograms | `warp_{frame,tilt}series/processed_items.json` | 300 s |
+| Frame quality histograms | `<frame/tilt-series dir>/processed_items.json`, `*ctf_*series.settings` | 300 s |
 | Template-matching scores | `template_matching/*/particles/*_particles.xml` | 600 s |
 | Acquisition order and dose | `mdoc/*.mdoc` | 900 s |
-| Tilt-series alignment | `warp_tiltseries/tiltstack/*/*.aln`, `warp_tiltseries/*.xml` | 300 s |
+| Tilt-series alignment | `<tiltstack dir>/*/*.aln`, `<tilt-series dir>/*.xml` | 300 s |
 | Runs index (`--runs-parent`) | sibling `.opus_run_state.json` files | 300 s |
 
 Phase rows carry human-readable stage names (mirroring
@@ -150,9 +150,12 @@ data behind a "stale" banner rather than blanking, and backs off its retries.
 The **Frames** tab answers the question `WarpTools filter_quality --settings
 warp_frameseries.settings --histograms` answers, without running WarpTools.
 
-It reads WARP's own quality cache -- `processed_items.json` in
-`warp_frameseries/` and `warp_tiltseries/` -- which is where `filter_quality`
-reads from. Two reasons not to shell out to the tool itself:
+It reads WARP's own quality cache -- `processed_items.json` in the frame-series
+and tilt-series processing folders (from `pipeline.conf` or the `--*-dir`
+options; `warp_frameseries/` and `warp_tiltseries/` by default) -- which is
+where `filter_quality` reads from. If the tilt-series folder has no cache, the
+defocus/astig/CTF-res/inclination columns and the sparklines stay empty and the
+notes say which folder was read. Two reasons not to shell out to the tool itself:
 
 - WarpTools is a .NET binary and its GC cannot reserve its address space under
   a login node's `ulimit -v`. It dies with *"Failed to create CoreCLR,
@@ -171,6 +174,18 @@ but only for metrics that both exist and vary. A metric WARP never measured
 everywhere (phase shift with no phase plate) are named in a line under the
 grid instead of drawn as an empty card. `null` is kept distinct from `0`: an
 unmeasured metric is not a measured zero.
+
+**CTF check** (last column, plus an attention item) flags a series whose fit
+looks wrong: tilts piled at the search floor, tilts more than 1.5 um from the
+series median (single low-dose tilts can lock onto the third CTF ring and fit
+at a third of the true defocus), per-tilt scatter over 0.75 um, or a median
+more than 1 um from the mdoc `TargetDefocus`. The search range is the one each
+fit recorded (`*ctf_frameseries.settings`, `ctf_tiltseries.settings`), not the
+defaults in the main `.settings`. Fits *at* the ceiling are not flagged per
+tilt -- a true defocus can sit there -- but a range leaving less than 1 um of
+margin around the target is raised once for the run. (2026-09: a 0.5-4 um
+search around a 4 um target aliased many tilts to ~1.3 um while this table
+looked normal.)
 
 **Per tilt series** shows the tilt-series-level fit -- tilt range, defocus
 range, astigmatism, CTF resolution, specimen inclination and the largest

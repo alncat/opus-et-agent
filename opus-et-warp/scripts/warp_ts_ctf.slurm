@@ -89,6 +89,18 @@ python "${SCRIPT_DIR}/scripts/warp_settings.py" check-voltage \
     echo "ERROR: Rerun frame-series CTF with CTF_VOLTAGE=$CTF_VOLTAGE before choosing a hand."
     exit 1
 }
+# Defocus search from the mdoc TargetDefocus (blank CTF_DEFOCUS_MIN/MAX) or checked
+# against it. WARP's own floor is 0.5 um: far below a typical target, single
+# low-dose tilts then alias to a fraction of the true defocus.
+CTF_RANGE=$(python "${SCRIPT_DIR}/scripts/warp_settings.py" ctf-range "$MDOC_DIR" \
+    --min "${CTF_DEFOCUS_MIN:-}" --max "${CTF_DEFOCUS_MAX:-}") || exit 1
+read -r CTF_DMIN CTF_DMAX CTF_TARGET <<< "$CTF_RANGE"
+# ... and not aliased: the hand check correlates their local defocus gradients.
+python "${SCRIPT_DIR}/scripts/warp_settings.py" check-ctf-fit \
+    "${FRAMESERIES_DIR}.settings" frames "$CTF_DMIN" "$CTF_DMAX" --target "$CTF_TARGET" || {
+    echo "ERROR: Refit frame-series CTF with a range around the collection target before choosing a hand."
+    exit 1
+}
 
 # auto uses local FRAME CTF grids, not the later tilt-series CTF fit.
 # keep preserves a deliberately selected geometry. No fallback guesses.
@@ -177,7 +189,7 @@ echo "CTF parameters:"
 echo "  - Voltage: $CTF_VOLTAGE kV; Cs: ${CTF_CS:-2.7} mm"
 echo "  - Window size: $CTF_WINDOW"
 echo "  - Max resolution: $CTF_RANGE_MAX A"
-echo "  - Max defocus: $CTF_DEFOCUS_MAX um"
+echo "  - Defocus search: $CTF_DMIN-$CTF_DMAX um (collection target ${CTF_TARGET:-unknown} um)"
 echo "  - Processes per GPU: $PERDEVICE"
 
 "${WARP_DIR}/WarpTools" ts_ctf \
@@ -186,7 +198,8 @@ echo "  - Processes per GPU: $PERDEVICE"
 --cs "${CTF_CS:-2.7}" \
 --window "$CTF_WINDOW" \
 --range_high "$CTF_RANGE_MAX" \
---defocus_max "$CTF_DEFOCUS_MAX" \
+--defocus_min "$CTF_DMIN" \
+--defocus_max "$CTF_DMAX" \
 --perdevice "$PERDEVICE"
 
 CTF_EXIT_CODE=$?
@@ -204,6 +217,8 @@ fi
 
 python "${SCRIPT_DIR}/scripts/warp_settings.py" check-voltage \
     "$TILTSERIES_SETTINGS" "$CTF_VOLTAGE" || exit 1
+python "${SCRIPT_DIR}/scripts/warp_settings.py" check-ctf-fit \
+    "$TILTSERIES_SETTINGS" tilts "$CTF_DMIN" "$CTF_DMAX" || exit 1
 
 # =============================================================================
 # Summary
@@ -227,7 +242,7 @@ echo "CTF parameters:"
 echo "  - Voltage: $CTF_VOLTAGE kV; Cs: ${CTF_CS:-2.7} mm"
 echo "  - Window: $CTF_WINDOW"
 echo "  - Max resolution: $CTF_RANGE_MAX A"
-echo "  - Max defocus: $CTF_DEFOCUS_MAX um"
+echo "  - Defocus search: $CTF_DMIN-$CTF_DMAX um"
 echo ""
 echo "Output locations:"
 echo "  - CTF XML files: warp_tiltseries/*.xml"

@@ -30,7 +30,7 @@ HALF1="${M_HALF1:-}"
 HALF2="${M_HALF2:-}"
 MASK="${M_MASK:-}"
 PARTICLES_STAR="${M_PARTICLES_STAR:-}"
-M_DIR="m"
+M_DIR="${M_DIR:-m}"                      # M workspace: M_DIR from pipeline.conf, else m/
 TEMPORAL_SAMPLES=1
 
 # -----------------------------------------------------------------------------

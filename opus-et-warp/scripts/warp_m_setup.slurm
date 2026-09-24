@@ -23,7 +23,7 @@ SPECIES_CONF="${SPECIES_CONF:-${SCRIPT_DIR}/species.conf}"
 source "$SPECIES_CONF" 2>/dev/null || { echo "ERROR: $SPECIES_CONF not found. Set SKILL_DIR or copy species.example.conf -> species.conf and edit."; exit 1; }
 
 # Script-specific overrides (uncomment to override pipeline.conf/species.conf defaults)
-M_DIR="m"                                # MTools output dir
+M_DIR="${M_DIR:-m}"                      # M workspace: M_DIR from pipeline.conf, else m/
 
 # -----------------------------------------------------------------------------
 # Environment

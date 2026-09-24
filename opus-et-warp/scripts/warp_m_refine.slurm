@@ -25,7 +25,7 @@ SPECIES_CONF="${SPECIES_CONF:-${SCRIPT_DIR}/species.conf}"
 source "$SPECIES_CONF" 2>/dev/null || { echo "ERROR: $SPECIES_CONF not found. Set SKILL_DIR or copy species.example.conf -> species.conf and edit."; exit 1; }
 
 # Script-specific overrides (uncomment to override pipeline.conf/species.conf defaults)
-M_DIR="m"
+M_DIR="${M_DIR:-m}"                      # M workspace: M_DIR from pipeline.conf, else m/
 REFINE_PARTICLES=1                       # 1 = refine particle poses, 0 = skip
 CTF_DEFOCUS=1                            # 1 = refine CTF defocus per tilt, 0 = skip
 PERDEVICE_REFINE=1                       # threads per GPU
@@ -62,7 +62,7 @@ echo "  args: ${MCORE_ARGS[*]}"
 MCore "${MCORE_ARGS[@]}"
 
 echo ""
-echo "Done. Refined half maps in m/species/<name>/<species>_half1.mrc and <species>_half2.mrc."
+echo "Done. Refined half maps in ${M_DIR}/species/<name>/<species>_half1.mrc and <species>_half2.mrc."
 echo "Next options:"
 echo "  - update mask:        sbatch scripts/warp_m_update_mask.slurm"
 echo "  - another pass:       sbatch scripts/warp_m_refine.slurm"

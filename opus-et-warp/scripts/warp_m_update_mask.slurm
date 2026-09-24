@@ -29,7 +29,7 @@ source "$SPECIES_CONF" 2>/dev/null || { echo "ERROR: $SPECIES_CONF not found. Se
 # Script-specific values come from species.conf; override with environment vars if needed.
 THRESHOLD="${M_MASK_THRESHOLD:-}"        # density threshold (inspect _filt.mrc)
 DILATE="2"                               # dilation in pixels (soft-edge padding)
-M_DIR="m"
+M_DIR="${M_DIR:-m}"                      # M workspace: M_DIR from pipeline.conf, else m/
 MAP_OVERRIDE=""                          # absolute path; "" = use resolved species prefix
 
 # -----------------------------------------------------------------------------

@@ -51,6 +51,12 @@ if ! [[ "${CTF_VOLTAGE:-}" =~ ^[1-9][0-9]*$ ]]; then
     echo "ERROR: Set CTF_VOLTAGE explicitly in pipeline.conf (e.g. 200 or 300 kV)."
     exit 1
 fi
+# Defocus search from the mdoc TargetDefocus (blank CTF_DEFOCUS_MIN/MAX) or checked
+# against it. WARP's own floor is 0.5 um: far below a typical target, single
+# low-dose tilts then alias to a fraction of the true defocus.
+CTF_RANGE=$(python "${SCRIPT_DIR}/scripts/warp_settings.py" ctf-range "$MDOC_DIR" \
+    --min "${CTF_DEFOCUS_MIN:-}" --max "${CTF_DEFOCUS_MAX:-}") || exit 1
+read -r CTF_DMIN CTF_DMAX CTF_TARGET <<< "$CTF_RANGE"
 
 export LD_LIBRARY_PATH="${CONDA_LIB}:${WARP_DIR}:$LD_LIBRARY_PATH"
 export PATH="${WARP_DIR}:$PATH"
@@ -172,7 +178,7 @@ echo ""
 echo "CTF parameters:"
 echo "  - Grid: $CTF_GRID"
 echo "  - Max resolution: $CTF_RANGE_MAX A"
-echo "  - Max defocus: $CTF_DEFOCUS_MAX um"
+echo "  - Defocus search: $CTF_DMIN-$CTF_DMAX um (collection target ${CTF_TARGET:-unknown} um)"
 
 if [ "$FRAME_MODE" = "single" ]; then
     # Single-frame MRC: no motion correction. WARP expects averaged images in average/.
@@ -194,7 +200,8 @@ if [ "$FRAME_MODE" = "single" ]; then
     --cs "${CTF_CS:-2.7}" \
     --grid "$CTF_GRID" \
     --range_max "$CTF_RANGE_MAX" \
-    --defocus_max "$CTF_DEFOCUS_MAX" \
+    --defocus_min "$CTF_DMIN" \
+    --defocus_max "$CTF_DMAX" \
     --perdevice 1
 else
     # Fractionated MRC/TIFF/EER: motion correction and CTF estimation.
@@ -207,7 +214,8 @@ else
     --c_voltage "$CTF_VOLTAGE" \
     --c_cs "${CTF_CS:-2.7}" \
     --c_range_max "$CTF_RANGE_MAX" \
-    --c_defocus_max "$CTF_DEFOCUS_MAX" \
+    --c_defocus_min "$CTF_DMIN" \
+    --c_defocus_max "$CTF_DMAX" \
     --c_use_sum \
     --out_averages \
     --out_average_halves \
@@ -223,6 +231,8 @@ if [ $CTF_EXIT_CODE -ne 0 ]; then
 fi
 python "${SCRIPT_DIR}/scripts/warp_settings.py" check-voltage \
     "${FRAMESERIES_DIR}.settings" "$CTF_VOLTAGE" || exit 1
+python "${SCRIPT_DIR}/scripts/warp_settings.py" check-ctf-fit \
+    "${FRAMESERIES_DIR}.settings" frames "$CTF_DMIN" "$CTF_DMAX" --target "$CTF_TARGET" || exit 1
 echo ""
 echo "CTF estimation completed successfully at $CTF_VOLTAGE kV"
 

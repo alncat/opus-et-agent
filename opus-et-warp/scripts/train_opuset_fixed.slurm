@@ -35,9 +35,16 @@ source "$SPECIES_CONF" 2>/dev/null || { echo "ERROR: $SPECIES_CONF not found. Se
 
 # Script-specific overrides (uncomment to override pipeline.conf/species.conf defaults)
 FIXED_SUBSET_LABEL="${FIXED_SUBSET_LABEL:-1}"       # From dsdsh convert_star --subset-label <N>
-STAR_FILE="${WORK_DIR}/warp_tiltseries/${TM_LABEL}_matching_subset${FIXED_SUBSET_LABEL}.star"
+STAR_FILE="${PROCESSING_DIR:-${WORK_DIR}/warp_tiltseries}/${TM_LABEL}_matching_subset${FIXED_SUBSET_LABEL}.star"
 POSE_PKL=""                                      # Pose pickle; auto-generated if empty
 OUTPUT_DIR="${WORK_DIR}/opuset/${TM_LABEL}/fixed_subset${FIXED_SUBSET_LABEL}"
+# Env overrides (survive species.conf sourcing), mirroring train_opuset.slurm — refine a
+# selection from an alternate result dir without editing species.conf.
+[ -n "${STAR_FILE_OVERRIDE:-}" ] && STAR_FILE="$STAR_FILE_OVERRIDE"
+[ -n "${OUTPUT_DIR_OVERRIDE:-}" ] && OUTPUT_DIR="$OUTPUT_DIR_OVERRIDE"
+# Resolve relative paths before changing to the training output directory.
+[[ "$STAR_FILE" = /* ]] || STAR_FILE="${WORK_DIR}/${STAR_FILE}"
+[[ "$OUTPUT_DIR" = /* ]] || OUTPUT_DIR="${WORK_DIR}/${OUTPUT_DIR}"
 
 # CRITICAL: OPUS-ET computes the CTF at --angpix, so it MUST be the SUBTOMOGRAM pixel
 # size (OUTPUT_ANGPIX = the exported subtomos' rlnDetectorPixelSize), NOT the raw

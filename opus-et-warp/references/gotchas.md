@@ -4,6 +4,31 @@
 
 ## WARP Gotchas
 
+### CTF defocus search must bracket the collection defocus
+- **Symptom**: per-tilt defocus in a tilt series splits into two groups, e.g. most
+  tilts at ~4 um and others at ~1.3 um (a third of the target); per-tilt SD over
+  ~0.75 um; the refinement FSC falls off at the first CTF zero, 1/sqrt(lambda*defocus)
+  (about 31 A for 4 um at 200 kV), and M passes stall there.
+- **Cause**: single low-dose tilts fit a CTF ring too far out and report
+  defocus/n. It happens when the search floor sits far below the target: the
+  scripts once passed only `--defocus_max`, so WARP's 0.5 um floor applied. In
+  20260907 (target 4 um, search 0.5-4 um) every series had aliased tilts.
+- **Fix**: leave `CTF_DEFOCUS_MIN/MAX` blank to derive target-2 .. target+3 um
+  from the mdoc `TargetDefocus` (2-7 um for 4 um); explicit values must leave >= 1 um
+  on each side and cannot lower the derived floor. `validate.sh` checks the range;
+  after frame and tilt-series CTF, `warp_settings.py check-ctf-fit` stops the job
+  if more than 3% of fits across the run, or more than 20% within one tilt series,
+  are aliased (> 1.5 um from the target / series median) or sit on a bound. Refitting
+  20260907 at 2-7 um: 0 of 1,363 tilts aliased, mean tilt-series CTF resolution
+  8.8 -> 6.1 A, and the hand check went from +0.47 to +0.66.
+- **Diagnose with a pilot, not a guess**: refit 3-5 series into a separate
+  `--output_processing` folder with the new range first. Here the first guess
+  (fits clipped at a 4 um ceiling) was wrong -- the ceiling equalled the target,
+  so true 4 um fits only looked clipped; raising the ceiling alone would have
+  left the aliasing in place.
+- **Re-check what depended on it**: the defocus-handedness check reads the
+  frame CTF grids, so it is only as good as those fits.
+
 ### CTF range max exceeds Nyquist
 - **Symptom**: `Error: Max frequency to fit is higher than the Nyquist frequency`
 - **Cause**: `--range_max` / `--c_range_max` too high for the pixel size

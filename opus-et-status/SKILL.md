@@ -24,6 +24,13 @@ Then open <http://127.0.0.1:8080>.
   (`ssh <CLUSTER_HOST> true` must succeed without a password prompt; the client
   uses `BatchMode=yes`).
 - `--work-dir` is the run directory on the cluster.
+- WARP folders come from the run's `pipeline.conf` (`FRAMESERIES_DIR`,
+  `PROCESSING_DIR`, `TILTSTACK_DIR`, and `M_DIR` for the Refinement panel;
+  read, never executed), else the `warp_*` / `m` defaults. Point `--pipeline-conf` at the conf the jobs actually
+  source (default `opus-et-warp/pipeline.conf`), or name a tree directly with
+  `--tiltseries-dir` / `--frameseries-dir` / `--tiltstack-dir` / `--m-dir` -- e.g. after a
+  rebuild into `warp_tiltseries_v2`, a hard-coded `warp_tiltseries/` shows a
+  stale or empty tree. The Frames notes say which folders were read.
 - `--species-conf` defaults to `species.conf`; pass it only to start on a
   different one. Naming a conf that is not there is not fatal -- the Config tab
   says which file it could not read and every other panel still fills.

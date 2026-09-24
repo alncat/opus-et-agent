@@ -78,6 +78,7 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
  th .u,h4 .u{text-transform:none;letter-spacing:0}
  .att.error{background:#fff5f5;border-color:#ffc9c9;border-left-color:var(--red)}
  .att.warn{background:#fff9db;border-color:#ffe066;border-left-color:var(--accent)}
+ .ctfbad{color:#c2410c;font-size:.8rem}
  .att.action{background:#e7f5ff;border-color:#a5d8ff;border-left-color:#1971c2}
  .FAILED,.failed{color:var(--red);font-weight:600}
  .RUNNING,.running{color:var(--green);font-weight:600}
@@ -569,7 +570,8 @@ function mergeSeries(tomostar,warp){
     excluded:!!t.excluded}; });
   (warp||[]).forEach(w=>{
     const r=by[w.name]||(by[w.name]={name:w.name});
-    ['defocus_min','defocus_max','astigmatism','resolution','inclination','track']
+    ['defocus_min','defocus_max','astigmatism','resolution','inclination','track',
+     'ctf_flags','target_defocus']
       .forEach(k=>{ r[k]=w[k]; });
     if(r.n_tilts==null) r.n_tilts=w.n_tilts;
     if(r.tilt_min==null) r.tilt_min=w.tilt_min;
@@ -588,7 +590,8 @@ function renderFrames(st){
     sum.textContent = state==='error'
       ? 'could not read WARP’s quality cache'
       : (state==='ready'
-         ? 'no processed_items.json yet — WARP writes it once frame-series CTF has run'
+         ? 'no processed_items.json in '+((f.dirs||{}).frames||'warp_frameseries')
+           +' — WARP writes it once frame-series CTF has run'
          : 'loading…');
     hist.innerHTML=''; skip.innerHTML=''; wor.innerHTML='';
     document.getElementById('frdose').innerHTML='';
@@ -610,12 +613,16 @@ function renderFrames(st){
     return;
   }
   const res=metrics.find(m=>m.key==='resolution'), dfc=metrics.find(m=>m.key==='defocus');
+  const dirs=f.dirs||{}, cb=f.ctf_bounds||{}, chk=f.ctf_check||{};
+  const bnd=b=>b?(frFmt(b.min)+'–'+frFmt(b.max)+' µm'):'not recorded';
   sum.textContent=[
     f.n_frames+' movies',
     f.n_series?('across '+f.n_series+' tilt series'):'not yet grouped into tilt series',
     res?('median CTF resolution '+frFmt(res.median)+' Å'):'',
-    dfc?('median defocus '+frFmt(dfc.median)+' µm'):''
+    dfc?('median defocus '+frFmt(dfc.median)+' µm'):'',
+    chk.n_series?('CTF check: '+chk.n_flagged+' of '+chk.n_series+' tilt series flagged'):''
   ].filter(Boolean).join(' · ');
+  if((chk.range_warnings||[]).length) sum.textContent+=' · ⚠ '+chk.range_warnings.join('; ');
   hist.innerHTML='<div class="hgrid">'+metrics.map(m=>{
     const u=frUnit(m.unit);
     return `<div class="hcard"><h4>${esc(m.label)}`
@@ -641,25 +648,41 @@ function renderFrames(st){
       +'<th>CTF res <span class="u">(&Aring;)</span></th>'
       +'<th title="tilt of the specimen plane WARP fitted from the CTF">Inclination</th>'
       +`<th title="per-movie CTF resolution across the series, best at top, `
-      +`shared scale ${frFmt(tmn)}-${frFmt(tmx)} A">CTF across tilts</th></tr>`
+      +`shared scale ${frFmt(tmn)}-${frFmt(tmx)} A">CTF across tilts</th>`
+      +'<th title="tilts at the search floor, aliased tilts far from the series '
+      +'median, large scatter, or far from the mdoc TargetDefocus">CTF check</th></tr>'
       +rows.map(x=>`<tr${x.excluded?' class="excluded"':''}>
         <td><code>${esc(x.name)}</code>${x.excluded
              ?' <span class="FAILED">excluded</span>':''}</td>
         <td class="num">${x.n_tilts==null?'&mdash;':x.n_tilts}</td>
         <td class="num">${frFmt(x.tilt_min)}&deg; &hellip; ${frFmt(x.tilt_max)}&deg;</td>
         <td class="num">${x.max_dose==null?'&mdash;':frFix(x.max_dose,1)}</td>
-        <td class="num">${frFmt(x.defocus_min)} &ndash; ${frFmt(x.defocus_max)}</td>
+        <td class="num" title="${x.target_defocus==null?'no mdoc TargetDefocus'
+             :'collection target '+frFmt(x.target_defocus)+' µm'}">${frFmt(x.defocus_min)} &ndash; ${frFmt(x.defocus_max)}${
+             x.target_defocus==null?'':' <span class="muted">('+frFmt(x.target_defocus)+')</span>'}</td>
         <td class="num">${frFmt(x.astigmatism)}</td>
         <td class="num">${frFmt(x.resolution)}</td>
         <td class="num">${frFmt(x.inclination)}&deg;</td>
-        <td>${trackSvg(x.track,tmn,tmx)}</td></tr>`).join('')
+        <td>${trackSvg(x.track,tmn,tmx)}</td>
+        <td>${x.ctf_flags==null?'<span class="muted">&mdash;</span>'
+             :(x.ctf_flags.length
+               ?`<span class="ctfbad" title="${esc(x.ctf_flags.map(g=>g.text).join('\n'))}">`
+                +x.ctf_flags.map(g=>esc(g.text)).join('<br>')+'</span>'
+               :'<span class="muted">ok</span>')}</td></tr>`).join('')
       +'</table><div class="muted" style="margin-top:.4rem;font-size:.8rem">'
       +'Name, tilt count, tilt range and dose come from the tomostar files; defocus, '
       +'astigmatism and CTF res are the tilt-series fit and the sparkline is the '
       +'per-movie fit, so those two are estimated separately and need not agree. '
       +'A strongly asymmetric range such as -50 &hellip; +34 matters: the missing-wedge '
       +'angles are directional. Series dropped at Gate 1 are marked '
-      +'<span class="FAILED">excluded</span>.</div>'
+      +'<span class="FAILED">excluded</span>. Defocus in brackets is the mdoc '
+      +'collection target. CTF check uses the search range each fit recorded '
+      +'(frame fit '+esc(bnd(cb.frames))+', tilt-series fit '+esc(bnd(cb.tiltseries))+'). '
+      +'Read from <code>'+esc(dirs.frames||'')+'</code> and <code>'
+      +esc(dirs.tiltseries||'')+'</code>'
+      +(f.n_series?'':' — <b>no tilt-series processed_items.json there</b>: set '
+        +'PROCESSING_DIR in pipeline.conf or --tiltseries-dir to the tree WARP fitted')
+      +'.</div>'
     : '<span class="muted">no tilt series yet</span>';
   renderDose(f);
   renderAlign(st,series);
@@ -869,7 +892,8 @@ function renderAlign(st,series){
   const keys=Object.keys(al).sort();
   if(!keys.length){
     el.innerHTML='<span class="muted">'+(srcState(st,'alignment')==='ready'
-      ? 'no AreTomo <code>.aln</code> files under <code>warp_tiltseries/tiltstack/</code> yet'
+      ? 'no AreTomo <code>.aln</code> files under <code>'
+        +esc(((st.frames||{}).dirs||{}).tiltstack||'warp_tiltseries/tiltstack')+'/</code> yet'
       : 'loading…')+'</span>';
     return;
   }
@@ -1808,6 +1832,19 @@ def build_status(snapshot, work_dir=None):
     dose = sources.join_dose(acq.data if acq is not None else None, by_name)
     if dose:
         frames["dose"] = dose
+    # Copy the series rows too: the check writes into them.
+    if frames.get("series"):
+        frames["series"] = [dict(s) for s in frames["series"]]
+    sources.apply_ctf_targets(frames, acq.data if acq is not None else None)
+    check = frames.get("ctf_check") or {}
+    for w in check.get("range_warnings") or []:
+        attention.append({"level": "warn", "text": w})
+    if check.get("n_flagged"):
+        attention.append({"level": "warn", "text":
+                          f"CTF fit looks wrong for {check['n_flagged']} of "
+                          f"{check['n_series']} tilt series (tilts at the search "
+                          "floor, aliased, scattered, or far from the collection "
+                          "target) -- see Frames"})
     return {
         "sources": sources_out,
         "attention": attention,
@@ -2062,11 +2099,37 @@ def parse_args(argv=None):
     p.add_argument("--port", type=int, default=8080)
     # Never default to 0.0.0.0: there is no authentication.
     p.add_argument("--bind", default="127.0.0.1")
+    p.add_argument("--pipeline-conf", default="opus-et-warp/pipeline.conf",
+                   help="pipeline.conf the run's jobs actually source, relative to "
+                        "--work-dir or absolute (e.g. pipeline/pipeline.conf)")
+    p.add_argument("--frameseries-dir", default="",
+                   help="frame-series processing folder; default: FRAMESERIES_DIR "
+                        "from pipeline.conf, else warp_frameseries")
+    p.add_argument("--tiltseries-dir", default="",
+                   help="tilt-series processing folder WARP writes processed_items.json "
+                        "and per-series XMLs to (e.g. warp_tiltseries_v2); default: "
+                        "PROCESSING_DIR from pipeline.conf, else warp_tiltseries")
+    p.add_argument("--tiltstack-dir", default="",
+                   help="AreTomo stacks/alignments; default: TILTSTACK_DIR from "
+                        "pipeline.conf, else warp_tiltseries/tiltstack")
+    p.add_argument("--m-dir", default="",
+                   help="M population/species workspace; default: M_DIR from "
+                        "pipeline.conf, else m")
     p.add_argument("--runs-parent", default="",
                    help="directory whose subdirectories should be scanned for "
                         "other runs (those holding .opus_run_state.json); "
                         "enables the Runs tab")
     return p.parse_args(argv)
+
+
+def validation_cmd(work_dir, pipeline_conf_path, remote_init=""):
+    """Run validation against the dashboard's selected config, forwarding extra args."""
+    command = (f"cd {shlex.quote(work_dir)} && "
+               f"PIPELINE_CONF={shlex.quote(pipeline_conf_path)} "
+               'bash opus-et-warp/validate.sh --json "$@"')
+    if remote_init:
+        command = f"{remote_init} && {command}"
+    return ["sh", "-c", command, "_"]
 
 
 def main(argv=None):
@@ -2080,8 +2143,9 @@ def main(argv=None):
             return ["sh", "-c", f"{args.remote_init} && {command}"]
         return ["sh", "-c", command]
 
-    validate_cmd = remote_sh(
-        f"cd {shlex.quote(wd)} && bash opus-et-warp/validate.sh --json")
+    pipeline_conf_path = (args.pipeline_conf if args.pipeline_conf.startswith("/")
+                          else f"{wd}/{args.pipeline_conf}")
+    validate_cmd = validation_cmd(wd, pipeline_conf_path, args.remote_init)
 
     def fetch_validate():
         res = client.run(validate_cmd, timeout=180)
@@ -2094,6 +2158,28 @@ def main(argv=None):
                 f"(rc={res.rc}): {(text or res.stderr).strip()[:120]} "
                 "-- try --remote-init 'source ~/.bashrc && conda activate <env>'")
         return sources.phase_completion(json.loads(text))
+
+    dir_overrides = {"frames": args.frameseries_dir, "tiltseries": args.tiltseries_dir,
+                     "tiltstack": args.tiltstack_dir, "m": args.m_dir}
+    dirs_cache = {"at": 0.0, "dirs": None}
+
+    def current_dirs():
+        """WARP tree locations from pipeline.conf (re-read every 2 minutes, so a
+        migration to a new tree shows up without a restart)."""
+        now = time.monotonic()
+        if dirs_cache["dirs"] is None or now - dirs_cache["at"] > 120:
+            try:
+                conf = sources.parse_config(client.read_file(pipeline_conf_path))
+            except Exception:
+                conf = None
+            dirs_cache.update(at=now, dirs=sources.warp_dirs(wd, conf, dir_overrides))
+        return dirs_cache["dirs"]
+
+    def fetch_frames():
+        d = current_dirs()
+        out = sources.parse_frames(client.run(sources.frames_cmd(wd, d), timeout=60).stdout)
+        out["dirs"] = d
+        return out
 
     fetchers = {
         "squeue": lambda: sources.parse_squeue(client.run(sources.SQUEUE_ARGV).stdout),
@@ -2108,13 +2194,12 @@ def main(argv=None):
         # Tilt-series metadata only changes when series are imported or
         # excluded, so it does not need frequent refreshing.
         "refinement": lambda: sources.parse_m(
-            client.run(sources.m_cmd(wd), timeout=120).stdout),
+            client.run(sources.m_cmd(wd, current_dirs()), timeout=120).stdout),
         "funnel": lambda: sources.parse_funnel(
             client.run(sources.funnel_cmd(wd), timeout=180).stdout),
         # WARP's own quality cache for every movie and tilt series -- the same
         # numbers `WarpTools filter_quality --histograms` prints.
-        "frames": lambda: sources.parse_frames(
-            client.run(sources.frames_cmd(wd), timeout=60).stdout),
+        "frames": fetch_frames,
         # The template-matching scores exist in no STAR file, only in PyTOM's
         # particle XML; binned on the cluster so counts, not floats, cross.
         "tm_scores": lambda: sources.parse_tm_scores(
@@ -2124,7 +2209,7 @@ def main(argv=None):
         "acquisition": lambda: sources.parse_acquisition(
             client.run(sources.acquisition_cmd(wd), timeout=60).stdout),
         "alignment": lambda: sources.parse_align(
-            client.run(sources.align_cmd(wd), timeout=90).stdout),
+            client.run(sources.align_cmd(wd, current_dirs()), timeout=90).stdout),
         "disk": lambda: sources.parse_df(
             client.run(sources.disk_cmd(wd), timeout=30).stdout),
         "qc_images": lambda: sources.parse_qc_list(
@@ -2134,9 +2219,9 @@ def main(argv=None):
         # Filesystem probes over ssh; slow-changing, so generous TTLs keep the
         # login node unhassled.
         "inventory": lambda: sources.parse_inventory(
-            client.run(sources.inventory_cmd(wd), timeout=120).stdout),
+            client.run(sources.inventory_cmd(wd, current_dirs()), timeout=120).stdout),
         "recon": lambda: sources.parse_recon(
-            client.run(sources.recon_cmd(wd), timeout=120).stdout),
+            client.run(sources.recon_cmd(wd, current_dirs()), timeout=120).stdout),
         "training": lambda: sources.parse_training(
             client.run(sources.training_cmd(wd), timeout=120).stdout),
     }
@@ -2163,7 +2248,7 @@ def main(argv=None):
     editor = config_edit.ConfigEditor(
         client,
         species_conf_path=f"{wd}/opus-et-warp/{args.species_conf}",
-        pipeline_conf_path=f"{wd}/opus-et-warp/pipeline.conf",
+        pipeline_conf_path=pipeline_conf_path,
         validate_cmd=validate_cmd,
     )
 
@@ -2223,7 +2308,7 @@ def main(argv=None):
         if not _SAFE_NAME.match(tomo):
             raise config_edit.ValidationError(f"unsafe tilt series name: {tomo!r}")
         q = shlex.quote
-        outdir, recon = f"{wd}/qc_ondemand", f"{wd}/warp_tiltseries/reconstruction"
+        outdir, recon = f"{wd}/qc_ondemand", f"{current_dirs()['tiltseries']}/reconstruction"
         tools = f"{wd}/qc_tools"
         # Resolve the tomogram, whose name carries a pixel-size suffix.
         find_mrc = (f"m=$(ls -1 {q(recon)}/{tomo}_*Apx.mrc 2>/dev/null | head -1); "

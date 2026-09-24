@@ -31,10 +31,14 @@ def xml(pixel=1.1845, binning=1, folder='custom_v2'):
             '</Tomo></Settings>\n') % (pixel, binning, folder)
 
 
-def item_xml(tag='TiltSeries', hand='False', kv='200', unselected=''):
-    """Per-item WARP metadata: a movie or tilt series with its CTF voltage."""
+def item_xml(tag='TiltSeries', hand='False', kv='200', unselected='', defocus=(4.0,)):
+    """Per-item WARP metadata: a movie or tilt series with its CTF voltage and
+    defocus (one value for a movie, one per tilt in GridCTF for a tilt series)."""
+    grid = ''.join('<Node X="0" Y="0" Z="%d" Value="%s" />' % (i, d) for i, d in enumerate(defocus))
     return ('<?xml version="1.0" encoding="utf-8"?>\n<%s AreAnglesInverted="%s" UnselectManual="%s">'
-            '<CTF><Param Name="Voltage" Value="%s" /></CTF></%s>\n') % (tag, hand, unselected, kv, tag)
+            '<CTF><Param Name="Voltage" Value="%s" /><Param Name="Defocus" Value="%s" /></CTF>'
+            '<GridCTF Width="1" Height="1" Depth="%d">%s</GridCTF></%s>\n') % (
+        tag, hand, unselected, kv, defocus[0], len(defocus), grid, tag)
 
 
 def test_dimension_update_preserves_sampling_and_all_other_bytes(tmp_path):
@@ -125,7 +129,7 @@ def pipeline(tmp_path):
     (ts_xml/'ts1.xml').write_text(item_xml(kv='300'))
     (ts_xml/'ts2.xml').write_text(item_xml(hand='True', kv='300', unselected='True'))
     (tmp_path/'mdoc').mkdir()
-    (tmp_path/'mdoc/image.mdoc').touch()
+    (tmp_path/'mdoc/image.mdoc').write_text('[ZValue = 0]\nTargetDefocus = -4\n')
     (tmp_path/'tiltstack').mkdir()
     import mrcfile
     import numpy as np
@@ -189,7 +193,7 @@ def open(path, *args, **kwargs):
                 PROCESSING_DIR=tmp_path/'new_ts',TOMOSTAR_DIR=tmp_path/'tomostar',
                 MDOC_DIR=tmp_path/'mdoc',TILTSTACK_DIR=tmp_path/'tiltstack',
                 CTF_VOLTAGE=200,CTF_CS=2.7,CTF_WINDOW=512,CTF_RANGE_MAX=5,
-                CTF_DEFOCUS_MAX=4,ANGPIX=1.1845,EXPOSURE=3.2,TOMO_DIM_Z=2000,
+                ANGPIX=1.1845,EXPOSURE=3.2,TOMO_DIM_Z=2000,
                 FRAME_MODE='movie',BINNING_FACTOR=8,ALIGN_ANGPIX=9.476,
                 ARETOMO_OUTBIN=1)
     (tmp_path/'pipeline.conf').write_text('\n'.join(k+'='+shlex.quote(str(v)) for k,v in config.items()))
@@ -485,3 +489,111 @@ def test_keep_refuses_missing_hand(pipeline):
     assert proc.returncode != 0
     assert 'invalid AreAnglesInverted' in proc.stdout + proc.stderr
     assert calls == []
+
+
+
+# --- CTF defocus search range and fit checks (2026-09 aliasing) ----------------
+
+def test_ctf_range_derives_from_target_and_rejects_the_incident_range(tmp_path):
+    assert settings.ctf_search_range(4.0) == (2.0, 7.0)
+    assert settings.ctf_search_range(1.5) == (0.5, 4.5)          # floor never below 0.5
+    assert settings.ctf_search_range(4.0, 2.5, 6.0) == (2.5, 6.0)
+    with pytest.raises(ValueError, match='less than 1 um around the 4 um'):
+        settings.ctf_search_range(4.0, 0.5, 4.0)                  # the 20260907 range
+    with pytest.raises(ValueError, match='floor'):
+        settings.ctf_search_range(4.0, 0.5, 8.0)                  # a high ceiling does not fix the low floor
+    with pytest.raises(ValueError, match='No TargetDefocus'):
+        settings.ctf_search_range(None, None, 7.0)
+    assert settings.ctf_search_range(None, 2.0, 7.0) == (2.0, 7.0)
+    (tmp_path / 'a.mdoc').write_text('[ZValue = 0]\nTargetDefocus = -4\n[ZValue = 1]\nTargetDefocus = -4.0\n')
+    assert settings.mdoc_target_defocus(tmp_path) == 4.0
+    assert settings.mdoc_target_defocus(tmp_path / 'missing') is None
+
+
+def _fit_tree(tmp_path, kind, groups):
+    folder = tmp_path / kind
+    folder.mkdir()
+    (tmp_path / (kind + '.settings')).write_text(xml(folder=kind))
+    tag = 'Movie' if kind == 'frames' else 'TiltSeries'
+    for i, g in enumerate(groups):
+        (folder / ('item%03d.xml' % i)).write_text(item_xml(tag, defocus=tuple(g)))
+    return tmp_path / (kind + '.settings')
+
+
+def test_check_ctf_fits_catches_third_ring_aliasing(tmp_path):
+    # Frames: one defocus per movie against the 4 um target; 10 of 100 aliased.
+    s = _fit_tree(tmp_path, 'frames', [[4.0 + 0.01 * (i % 7)] for i in range(90)] + [[1.3]] * 10)
+    with pytest.raises(ValueError, match='10 aliased'):
+        settings.check_ctf_fits(s, 'frames', 2, 7, target=4.0)
+    # Tilt series: per-series medians differ (3.7 and 4.2) and are fine; one aliased tilt of 70 is tolerated.
+    s = _fit_tree(tmp_path, 'tilts', [[3.7] * 35, [4.2] * 34 + [1.35]])
+    assert '1 aliased' in settings.check_ctf_fits(s, 'tilts', 2, 7)
+
+
+def test_check_ctf_fits_catches_pile_up_at_a_bound(tmp_path):
+    s = _fit_tree(tmp_path, 'tilts', [[2.0] * 10 + [3.9] * 20])
+    with pytest.raises(ValueError, match='10 at the 2-7 um bounds'):
+        settings.check_ctf_fits(s, 'tilts', 2, 7)
+
+
+def test_check_ctf_fits_rejects_one_bad_series_in_a_large_run(tmp_path):
+    groups = [[2.0] * 30] + [[4.0] * 30 for _ in range(34)]
+    s = _fit_tree(tmp_path, 'tilts', groups)
+    with pytest.raises(ValueError, match='item000.xml'):
+        settings.check_ctf_fits(s, 'tilts', 2, 7)
+
+
+def test_fixed_training_resolves_relative_processing_dir_before_chdir(tmp_path):
+    work = tmp_path / 'work'
+    (work / 'warp_tiltseries_v2').mkdir(parents=True)
+    star = work / 'warp_tiltseries_v2' / 'ribo_matching_subset1.star'
+    star.write_text('data_\n')
+    skill = tmp_path / 'skill'
+    skill.mkdir()
+    (skill / 'pipeline.conf').write_text('WORK_DIR="{}"\nPROCESSING_DIR=warp_tiltseries_v2\n'
+                                         'OPUSET_ENV=qc\n'.format(work))
+    (skill / 'species.conf').write_text('TM_LABEL=ribo\nDATADIR="{}"\n'.format(work / 'missing'))
+    source = (SCRIPTS / 'train_opuset_fixed.slurm').read_text()
+    source = source.replace('source ~/.bashrc', 'conda() { return 0; }')
+    proc = subprocess.run(['bash', '-c', source], capture_output=True, text=True,
+                          env={**os.environ, 'SKILL_DIR': str(skill)}, cwd=tmp_path)
+    assert proc.returncode != 0
+    assert 'Star file not found' not in proc.stdout
+    assert 'Subtomogram data directory not found' in proc.stdout
+
+
+def test_ts_ctf_passes_the_derived_range_to_warp(pipeline):
+    run, _ = pipeline
+    proc, calls = run('warp_ts_ctf.slurm')
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    ctf = calls[-1]
+    assert ctf[ctf.index('--defocus_min') + 1] == '2' and ctf[ctf.index('--defocus_max') + 1] == '7'
+
+
+def test_aliased_frame_fits_block_the_hand_check(pipeline):
+    run, p = pipeline
+    (p/'frames/movie1.xml').write_text(item_xml('Movie', defocus=(1.3,)))
+    proc, calls = run('warp_ts_ctf.slurm')
+    assert proc.returncode != 0
+    assert calls == []
+    assert 'aliased' in proc.stdout + proc.stderr
+
+
+def test_the_incident_range_is_refused_before_any_fit(pipeline):
+    run, p = pipeline
+    append_conf(p, CTF_DEFOCUS_MIN=0.5, CTF_DEFOCUS_MAX=4)
+    proc, calls = run('warp_ts_ctf.slurm')
+    assert proc.returncode != 0 and calls == []
+    assert 'less than 1 um around the 4 um' in proc.stdout + proc.stderr
+
+
+@pytest.mark.parametrize('mode,flag', [('movie', '--c_defocus_min'), ('single', '--defocus_min')])
+def test_frame_import_passes_the_defocus_floor(pipeline, mode, flag):
+    run, p = pipeline
+    (p/'raw').mkdir()
+    (p/'raw/a.mrc').touch()
+    append_conf(p, FRAME_MODE=mode, FRAME_DIR=p/'raw', FILE_EXTENSION='*.mrc')
+    proc, calls = run('warp_frameseries_import.slurm')
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    ctf = next(c for c in calls if 'ctf' in c[0])
+    assert ctf[ctf.index(flag) + 1] == '2'

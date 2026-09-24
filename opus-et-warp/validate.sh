@@ -279,7 +279,7 @@ phase_required_vars() {
     case "$phase" in
         3a) echo "WORK_DIR WARP_DIR CONDA_LIB BINNING_FACTOR" | tr ' ' '\n' ;;
         3b) echo "WORK_DIR ARETOMO_EXE BINNING_FACTOR TOMO_DIM_Z" | tr ' ' '\n' ;;
-        5a) echo "WORK_DIR WARP_DIR CONDA_LIB CTF_RANGE_MAX CTF_DEFOCUS_MAX CTF_WINDOW" | tr ' ' '\n' ;;
+        5a) echo "WORK_DIR WARP_DIR CONDA_LIB CTF_RANGE_MAX CTF_WINDOW MDOC_DIR" | tr ' ' '\n' ;;
         5b) echo "WORK_DIR WARP_DIR CONDA_LIB BINNING_FACTOR" | tr ' ' '\n' ;;
         6a) echo "WORK_DIR ANGPIX BINNING_FACTOR TM_LABEL INPUT_MRC MAP_ANGPIX TM_BOX_SIZE" | tr ' ' '\n' ;;
         6b) echo "WORK_DIR TEMPLATE_MRC TM_MASK_MRC DIAMETER MASK_SIGMA" | tr ' ' '\n' ;;
@@ -607,6 +607,15 @@ if [[ "${CTF_VOLTAGE:-}" =~ ^(80|100|120|200|300)$ ]]; then
     pass "CTF_VOLTAGE=$CTF_VOLTAGE kV"
 else
     fail "CTF_VOLTAGE='${CTF_VOLTAGE:-}' must be set to the microscope voltage (80, 100, 120, 200 or 300 kV)"
+fi
+
+# Defocus search must bracket the collection defocus (mdoc TargetDefocus)
+if ctf_range=$(python3 "$SCRIPTS/warp_settings.py" ctf-range "$MDOC_DIR" \
+        --min "${CTF_DEFOCUS_MIN:-}" --max "${CTF_DEFOCUS_MAX:-}" 2>&1); then
+    read -r ctf_dmin ctf_dmax ctf_target <<< "$ctf_range"
+    pass "CTF defocus search ${ctf_dmin}-${ctf_dmax} µm (collection target ${ctf_target:-unknown} µm)"
+else
+    fail "CTF defocus search: $ctf_range"
 fi
 
 # CTF_RANGE_MAX ≥ 2×ANGPIX
@@ -990,13 +999,13 @@ if [ "$DRY_RUN" = "1" ]; then
             echo "  WarpTools create_source --population $POPULATION_NAME --name $SOURCE_NAME --angpix $ANGPIX_RESAMPLE"
             ;;
         Mb)
-            echo "  MTools create_species --population m/$POPULATION_NAME.population"
+            echo "  MTools create_species --population ${M_DIR:-m}/$POPULATION_NAME.population"
             echo "    --name $SPECIES_BASE --diameter $DIAMETER --sym $SYM --lowpass $LOWPASS"
             echo "    --half1 $M_HALF1 --half2 $M_HALF2 --mask $M_MASK"
             echo "    --particles $M_PARTICLES_STAR"
             ;;
-        Mc) echo "  MTools refine --population m/$POPULATION_NAME.population --source $SOURCE_NAME  (iterative, re-submit each pass)" ;;
-        Md) echo "  MTools update_mask --population m/$POPULATION_NAME.population --species $SPECIES_BASE --threshold $M_MASK_THRESHOLD" ;;
+        Mc) echo "  MTools refine --population ${M_DIR:-m}/$POPULATION_NAME.population --source $SOURCE_NAME  (iterative, re-submit each pass)" ;;
+        Md) echo "  MTools update_mask --population ${M_DIR:-m}/$POPULATION_NAME.population --species $SPECIES_BASE --threshold $M_MASK_THRESHOLD" ;;
         Me) echo "  WarpTools ts_export_particles --output_angpix $OUTPUT_ANGPIX --box $SUBTOMO_BOX_SIZE --diameter $DIAMETER" ;;
         M)
             echo "  Ma: WarpTools create_population + create_source (one-time setup)"

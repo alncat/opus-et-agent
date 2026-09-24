@@ -443,7 +443,7 @@ clusters → `sel_<TM_LABEL>.star`. Fixed-mode + M then start from the refined p
 
 ### 8.6 Fixed-mode half-maps (gold-standard)
 Split `sel_<TM_LABEL>.star` into two gold-standard halves at
-`warp_tiltseries/<TM_LABEL>_matching_subset{1,2}.star` — a **random ~50/50** partition
+`$PROCESSING_DIR/<TM_LABEL>_matching_subset{1,2}.star` — a **random ~50/50** partition
 that preserves the star header. For a single-`data_`-block star: keep the header lines up
 to the first data row, random-permute the data rows, cut in half, and write each half under
 that same header:
@@ -459,7 +459,7 @@ header, rows = lines[:first], [l for l in lines[first:] if l.strip()]
 random.seed(0); random.shuffle(rows)
 half = len(rows)//2
 for n,chunk in ((1,rows[:half]),(2,rows[half:])):
-    open(f"warp_tiltseries/<TM_LABEL>_matching_subset{n}.star","w").write(
+    open(f"<PROCESSING_DIR>/<TM_LABEL>_matching_subset{n}.star","w").write(
         "\n".join(header+chunk)+"\n")
 PY
 ```
@@ -667,7 +667,7 @@ project/                              # = $WORK_DIR
 ├── <output_dir>_subset2/             # Phase 8 fixed-mode on rlnRandomSubset=2 → half2
 ├── <template>_training_mask.mrc      # Phase 8: training-loss sphere mask
 │
-└── m/                                # M refinement (advanced.md)
+└── m/                                # M refinement (advanced.md); M_DIR in pipeline.conf
     ├── <population_name>.population  # MTools create_population output
     └── species/
         └── <species>_<hash>/         # WARP appends an 8-char hash

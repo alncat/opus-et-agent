@@ -494,7 +494,8 @@ FRAMES_OUT = ("@@warp_frameseries\n" + FRAMES_JSON
 
 def test_frames_cmd_reads_warps_cache_not_the_xml():
     argv = sources.frames_cmd("/run")
-    assert argv[0] == "sh" and argv[-1] == "/run"
+    assert argv[0] == "sh" and argv[4] == "/run"
+    assert argv[5:] == ["/run/warp_frameseries", "/run/warp_tiltseries"]
     assert "processed_items.json" in argv[2]
     # 200 MB of per-movie XML holds the same numbers; never walk it.
     assert ".xml" not in argv[2]
@@ -923,3 +924,146 @@ def test_parse_recon_all_consistent_when_dims_match():
            "RECON TS_027 960 928 460 12940.8 12509.439 6740\n")
     rows = sources.parse_recon(raw)
     assert all(r["dims_consistent"] for r in rows)
+
+
+# --- configured WARP folders and the CTF check (2026-09 incident) -----------
+
+class _Conf:
+    def __init__(self, value):
+        self.value = value
+
+
+def test_warp_dirs_default_conf_and_override_in_that_order():
+    d = sources.warp_dirs("/run")
+    assert d["tiltseries"] == "/run/warp_tiltseries" and d["tiltseries_source"] == "default"
+    conf = {"PROCESSING_DIR": _Conf("$WORK_DIR/warp_tiltseries_v2"),
+            "FRAMESERIES_DIR": _Conf("${WORK_DIR}/warp_frameseries"),
+            "TILTSTACK_DIR": _Conf("/abs/tiltstack")}
+    d = sources.warp_dirs("/run/", conf)
+    assert d["tiltseries"] == "/run/warp_tiltseries_v2"
+    assert d["frames"] == "/run/warp_frameseries" and d["tiltstack"] == "/abs/tiltstack"
+    assert d["tiltseries_source"] == "pipeline.conf"
+    d = sources.warp_dirs("/run", conf, {"tiltseries": "other_tree"})
+    assert d["tiltseries"] == "/run/other_tree" and d["tiltseries_source"] == "override"
+
+
+def test_warp_dirs_never_guesses_at_shell_expressions():
+    conf = {"PROCESSING_DIR": _Conf("$(pick_tree)"), "TILTSTACK_DIR": _Conf("$OTHER/x")}
+    d = sources.warp_dirs("/run", conf)
+    assert d["tiltseries"] == "/run/warp_tiltseries" and d["tiltstack_source"] == "default"
+
+
+def test_frames_cmd_reads_configured_trees_and_recorded_search_range(tmp_path):
+    import subprocess
+    (tmp_path / "fs").mkdir()
+    (tmp_path / "ts_v2").mkdir()
+    (tmp_path / "warp_tiltseries").mkdir()  # the stale tree must be ignored
+    (tmp_path / "fs" / "processed_items.json").write_text('[{"Path": "a.tif", "Def": 4.0}]')
+    (tmp_path / "fs" / "align_and_ctf_frameseries.settings").write_text(
+        '<Param Name="ZMin" Value="0.5" /><Param Name="ZMax" Value="4" />')
+    (tmp_path / "ts_v2" / "processed_items.json").write_text(
+        '[{"Path": "TS_1.tomostar", "Tlts": ["a.tif"], "MinDefocus": 4.0}]')
+    (tmp_path / "ts_v2" / "ctf_tiltseries.settings").write_text(
+        '<Param Name="ZMin" Value="2" /><Param Name="ZMax" Value="7" />')
+    (tmp_path / "warp_tiltseries" / "processed_items.json").write_text('[]')
+    dirs = sources.warp_dirs(str(tmp_path), overrides={"frames": "fs", "tiltseries": "ts_v2"})
+    out = subprocess.run(sources.frames_cmd(str(tmp_path), dirs), capture_output=True,
+                         text=True).stdout
+    parsed = sources.parse_frames(out)
+    assert parsed["n_series"] == 1
+    assert parsed["ctf_bounds"] == {"frames": {"min": 0.5, "max": 4.0},
+                                    "tiltseries": {"min": 2.0, "max": 7.0}}
+
+
+# Real per-tilt defocus from the 20260907 pilot (um), original 0.5-4 um fit.
+TOMO1_ALIASED = [0.96, 1.19, 1.19, 1.18, 1.09, 1.23, 1.01, 3.98, 1.36, 1.19, 1.23, 4.09,
+                 4.00, 4.07, 4.07, 4.08, 4.21, 4.07, 4.08, 4.04, 4.02, 4.00, 4.03, 4.02,
+                 1.06, 1.23, 1.36, 1.13, 1.13, 1.36, 1.09, 1.08]
+TOMO22_AT_TARGET = [3.98, 3.98, 4.07, 3.98, 4.08, 4.07, 3.98, 4.06, 4.03, 4.07, 4.04, 4.02,
+                    4.01, 4.00, 4.15, 4.05, 4.03, 4.02, 4.02, 4.00, 4.03, 4.03, 4.02, 4.03,
+                    4.01, 4.16, 4.01, 1.29]
+OLD_BOUNDS = {"frames": {"min": 0.5, "max": 4.0}, "tiltseries": {"min": 0.5, "max": 4.0}}
+
+
+def test_ctf_flags_catch_third_ring_aliasing():
+    s = {"defocus_track": TOMO1_ALIASED, "defocus_min": 0.96, "defocus_max": 4.21}
+    codes = {f["code"] for f in sources.ctf_flags(s, OLD_BOUNDS, target=4.0)}
+    assert {"outlier", "spread", "target"} <= codes
+
+
+def test_ctf_flags_do_not_call_a_true_defocus_at_the_ceiling_clipped():
+    # tomo22 really is ~4.03 um (a 2-7 um refit agrees); only its one aliased
+    # tilt is a problem, not the fits that sit at the old 4 um ceiling.
+    s = {"defocus_track": TOMO22_AT_TARGET, "defocus_min": 1.26, "defocus_max": 4.14}
+    flags = sources.ctf_flags(s, OLD_BOUNDS, target=4.0)
+    assert [f["code"] for f in flags] == ["outlier"]
+    assert "1 of 28 tilts" in flags[0]["text"]
+
+
+def test_ctf_flags_clean_series_and_floor_pile_up():
+    clean = {"defocus_track": [3.86, 3.88, 3.87, 3.85, 3.9, 3.84], "defocus_min": 3.84}
+    assert sources.ctf_flags(clean, OLD_BOUNDS, target=4.0) == []
+    floor = {"defocus_track": [0.5, 0.51, 0.52, 3.9, 3.95, 4.0]}
+    assert "floor" in {f["code"] for f in sources.ctf_flags(floor, OLD_BOUNDS)}
+
+
+def test_ctf_range_warning_when_search_does_not_bracket_the_target():
+    assert len(sources.ctf_range_warnings(OLD_BOUNDS, 4.0)) == 2
+    fixed = {"frames": {"min": 2.0, "max": 7.0}, "tiltseries": {"min": 2.0, "max": 7.0}}
+    assert sources.ctf_range_warnings(fixed, 4.0) == []
+    assert sources.ctf_range_warnings(OLD_BOUNDS, None) == []
+
+
+def test_mdoc_target_defocus_is_parsed_as_underfocus_magnitude():
+    text = "\n".join(["TS_9|0|TiltAngle|0.0", "TS_9|0|TargetDefocus|-4",
+                      "TS_9|1|TiltAngle|3.0", "TS_9|1|TargetDefocus|-4"])
+    out = sources.parse_mdoc(text)["TS_9"]
+    assert out["target_defocus"] == 4.0
+    assert out["tilts"][0]["target_defocus"] == 4.0
+
+
+def test_apply_ctf_targets_joins_mdoc_target_and_summarises():
+    frames = {"series": [{"name": "TS_1", "defocus_track": TOMO1_ALIASED},
+                         {"name": "TS_2", "defocus_track": [3.9, 3.92, 3.88]}],
+              "ctf_bounds": OLD_BOUNDS}
+    acq = {"TS_1": {"target_defocus": 4.0}, "TS_2.mrc": {"target_defocus": 4.0}}
+    sources.apply_ctf_targets(frames, acq)
+    assert frames["series"][0]["target_defocus"] == 4.0
+    assert frames["series"][1]["ctf_flags"] == []
+    check = frames["ctf_check"]
+    assert (check["n_flagged"], check["n_series"], check["target_defocus"]) == (1, 2, 4.0)
+    assert len(check["range_warnings"]) == 2
+
+
+def test_align_inventory_recon_use_configured_folders():
+    d = sources.warp_dirs("/run", overrides={"tiltseries": "ts_v2", "tiltstack": "stk"})
+    assert sources.align_cmd("/run", d)[5:] == ["/run/stk", "/run/ts_v2"]
+    assert sources.inventory_cmd("/run", d)[5:] == ["/run/stk", "/run/ts_v2"]
+    assert sources.recon_cmd("/run", d)[5:] == ["/run/ts_v2"]
+    # `set --` inside the inventory loop reuses $1..$3, so they are copied first.
+    assert sources.inventory_cmd("/run", d)[2].startswith("STK=$2; TS=$3;")
+
+
+def test_m_panel_and_refinement_follow_m_dir_from_pipeline_conf():
+    d = sources.warp_dirs("/run")
+    assert d["m"] == "/run/m" and d["m_source"] == "default"
+    d = sources.warp_dirs("/run", {"M_DIR": _Conf("$WORK_DIR/m_ribo_v2_noflip")})
+    assert d["m"] == "/run/m_ribo_v2_noflip" and d["m_source"] == "pipeline.conf"
+    argv = sources.m_cmd("/run", d)
+    assert argv[5] == "/run/m_ribo_v2_noflip" and argv[2].startswith('cd "$2"')
+
+
+def test_frames_bounds_come_from_standalone_fs_ctf_record(tmp_path):
+    import os, subprocess, time
+    (tmp_path / "fs").mkdir()
+    (tmp_path / "fs" / "processed_items.json").write_text("[]")
+    old = tmp_path / "fs" / "align_and_ctf_frameseries.settings"
+    old.write_text('<Param Name="ZMin" Value="0.5" /><Param Name="ZMax" Value="4" />')
+    os.utime(old, (time.time() - 3600, time.time() - 3600))
+    (tmp_path / "fs" / "ctf_movies.settings").write_text(
+        '<Param Name="ZMin" Value="2" /><Param Name="ZMax" Value="7" />')
+    dirs = sources.warp_dirs(str(tmp_path), overrides={"frames": "fs"})
+    out = subprocess.run(sources.frames_cmd(str(tmp_path), dirs), capture_output=True,
+                         text=True).stdout
+    # the newer refit's record wins over the original motion+CTF run's
+    assert sources.parse_frames(out)["ctf_bounds"]["frames"] == {"min": 2.0, "max": 7.0}

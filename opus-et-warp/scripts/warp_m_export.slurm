@@ -31,9 +31,9 @@ SPECIES_CONF="${SPECIES_CONF:-${SCRIPT_DIR}/species.conf}"
 source "$SPECIES_CONF" 2>/dev/null || { echo "ERROR: $SPECIES_CONF not found. Set SKILL_DIR or copy species.example.conf -> species.conf and edit."; exit 1; }
 
 # Script-specific overrides (uncomment to override pipeline.conf/species.conf defaults)
-M_DIR="m"
+M_DIR="${M_DIR:-m}"                      # M workspace: M_DIR from pipeline.conf, else m/
 INPUT_PATTERN="*_relion.star"            # produced by the convert_warp step below
-OUTPUT_STAR=""                           # blank = warp_tiltseries/<species>_matching_refined.star
+OUTPUT_STAR=""                           # blank = $PROCESSING_DIR/<species>_matching_refined.star
 
 # -----------------------------------------------------------------------------
 # Environment
@@ -63,7 +63,7 @@ fi
 SPECIES_DIR="${SPECIES_DIRS[0]}"
 SPECIES_NAME=$(basename "$SPECIES_DIR")
 if [ -z "$OUTPUT_STAR" ]; then
-    OUTPUT_STAR="warp_tiltseries/${SPECIES_NAME}_matching_refined.star"
+    OUTPUT_STAR="${PROCESSING_DIR:-$WORK_DIR/warp_tiltseries}/${SPECIES_NAME}_matching_refined.star"
 fi
 
 # -----------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -14,6 +15,17 @@ import config_edit
 import poller as poller_mod
 import sources
 import status_server
+
+
+def test_validation_uses_selected_pipeline_conf_and_forwards_species(tmp_path):
+    script = tmp_path / 'opus-et-warp' / 'validate.sh'
+    script.parent.mkdir()
+    script.write_text('#!/bin/bash\nprintf "%s\\n" "$PIPELINE_CONF" "$@"\n')
+    selected = tmp_path / 'other pipeline.conf'
+    cmd = status_server.validation_cmd(str(tmp_path), str(selected))
+    proc = subprocess.run(cmd + ['--species', 'species_ribo.conf'], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.splitlines() == [str(selected), '--json', '--species', 'species_ribo.conf']
 
 
 class StubEditor:
@@ -1235,3 +1247,20 @@ def test_qc_lightbox_captions_the_check_not_the_path():
     body = js[js.index("function showQc("):js.index("function navQc(")]
     assert "qcCaption" in body
     assert "qcStrip" in body
+
+
+def test_status_flags_bad_ctf_fits_and_a_narrow_search_range():
+    frames = {"n_frames": 3, "series": [{"name": "TS_1",
+              "defocus_track": [1.1, 1.2, 4.0, 4.1, 1.3, 4.0]}],
+              "ctf_bounds": {"frames": {"min": 0.5, "max": 4.0}, "tiltseries": None}}
+    acq = {"TS_1": {"target_defocus": 4.0, "tilts": []}}
+    p = poller_mod.Poller({"frames": lambda: frames, "acquisition": lambda: acq},
+                          {"frames": 10.0, "acquisition": 10.0})
+    p.refresh_due()
+    body = status_server.build_status(p.snapshot())
+    texts = [a["text"] for a in body["attention"]]
+    assert any("CTF fit looks wrong for 1 of 1" in x for x in texts)
+    assert any("0.5-4 um around a 4 um collection target" in x for x in texts)
+    assert body["frames"]["series"][0]["ctf_flags"]
+    # the poller's cached rows are not modified in place
+    assert "ctf_flags" not in frames["series"][0]
