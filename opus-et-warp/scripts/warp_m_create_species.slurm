@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=warp_m_species         # Job name
-#SBATCH --partition=normal                # CPU partition
+#SBATCH --partition=normal                # GPU partition
 #SBATCH --nodes=1                         # Number of nodes
 #SBATCH --ntasks=1                        # Number of tasks
 #SBATCH --cpus-per-task=4                 # CPU cores per task
 #SBATCH --mem=64G                         # Memory per node
 #SBATCH --time=02:00:00                   # Time limit (2 hours)
+#SBATCH --gres=gpu:1                      # create_species trains its denoiser on a GPU
 #SBATCH --output=logs/warp_m_species_%j.out    # Standard output log
 #SBATCH --error=logs/warp_m_species_%j.err     # Standard error log
 

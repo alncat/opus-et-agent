@@ -74,6 +74,24 @@ def test_slurm_script_logs_by_job_id_under_logs(script):
     assert re.search(r"^#SBATCH --job-name=", text, re.M), "--job-name"
 
 
+_GPU_CALL = re.compile(r"\bMCore\b|MTools\s+create_species|WarpTools\s+(fs_motion_and_ctf|ts_ctf|"
+                       r"ts_reconstruct|ts_export_particles|ts_stack|ts_defocus_hand)\b|"
+                       r"\$\{?ARETOMO_EXE|localization\.py|train_tomo")
+
+
+@pytest.mark.parametrize("script", [s.name for s in SLURM])
+def test_slurm_script_that_runs_a_gpu_tool_requests_a_gpu(script):
+    """Without --gres the job still sees the node's GPUs and runs on one that
+    another job holds: in 2026-09 MTools create_species died with CUDA out of
+    memory on a 32 GB GPU with 239 MB free, while an identical job that
+    happened to land on an idle GPU succeeded."""
+    lines = (SCRIPTS / script).read_text().splitlines()
+    calls = [l for l in lines if _GPU_CALL.search(l)
+             and not l.lstrip().startswith(("#", "echo"))]
+    if calls:
+        assert any(re.match(r"#SBATCH\s+--gres=gpu:", l) for l in lines), calls[0]
+
+
 def test_every_manifest_script_exists():
     missing = [(ph, s) for ph, spec in _manifest().items()
                for s in spec.get("scripts", []) if not (SCRIPTS / s).exists()]

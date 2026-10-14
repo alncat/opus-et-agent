@@ -54,6 +54,13 @@
 - AreTomo: -max ascending to +min (e.g., -54, -51, …, 0, …, +54)
 - Fix: `awk '{print -$1}'` negates each angle; the order is preserved in the respective sign convention. Negate output back for WARP import.
 
+### Request a GPU for every GPU step, even short ones
+A job without `--gres=gpu:N` still sees the node's GPUs and may run on one
+another job holds. In 2026-09 `MTools create_species` (it trains a denoiser)
+died with CUDA out of memory on a 32 GB GPU with 239 MB free, while an
+identical job that landed on an idle GPU succeeded. A contract test now
+requires `--gres` in every script that calls a GPU tool.
+
 ### OutOfMemoryException
 - Use 256 GB+ RAM in SLURM jobs
 - Reduce `--perdevice` to 1
