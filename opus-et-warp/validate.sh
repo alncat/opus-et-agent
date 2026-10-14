@@ -221,6 +221,7 @@ phase_scripts() {
         3) echo "warp_export_stacks.slurm warp_aretomo_align_negate.slurm" ;;
         3a) echo "warp_export_stacks.slurm" ;;
         3b) echo "warp_aretomo_align_negate.slurm" ;;
+        3c) echo "warp_alignment_qc.slurm" ;;
         3.5) echo "warp_update_tomo_dims.slurm" ;;
         4) echo "warp_import_alignments.slurm" ;;
         5) echo "warp_ts_ctf.slurm warp_ts_reconstruct.slurm" ;;
@@ -749,6 +750,53 @@ if [ "$DRY_RUN" != "1" ]; then
         "$TILTSTACK_DIR/__TS__/__TS__.tlt" \
         "$TILTSTACK_DIR/__TS__/__TS__.xf"
 
+    # Phase 3c: AreTomo reports no residual for a global alignment and its shift
+    # track cannot tell a stage jump from a lost track; the image check decides.
+    if need_phase 3c || need_phase 4 || [[ "$PHASE" == 5* ]] || [[ "$PHASE" == 6* ]] || need_phase 7 || [ -z "$PHASE" ]; then
+        aln_total=0; aln_have=0
+        for ts_file in "$TOMOSTAR_DIR"/*.tomostar; do
+            [ -f "$ts_file" ] || continue
+            ((aln_total++))
+            ts_name=$(basename "$ts_file" .tomostar)
+            [ -f "$TILTSTACK_DIR/$ts_name/$ts_name.xf" ] && ((aln_have++))
+        done
+        if [ "$aln_total" -gt 0 ] && [ "$aln_have" -eq "$aln_total" ]; then
+            aln_done=0
+            aln_tsv="$WORK_DIR/gate1_qc/alignment_metrics.tsv"
+            if [ ! -f "$aln_tsv" ]; then
+                fail "Phase 3c alignment QC not run — sbatch scripts/warp_alignment_qc.slurm before importing alignments"
+            else
+                aln_fail=$(awk -F'\t' 'NR > 1 && $2 != "pass" {print $1}' "$aln_tsv" | tr '\n' ' ')
+                aln_n=$(awk 'NR > 1' "$aln_tsv" | wc -l | tr -d ' ')
+                if [ -n "$aln_fail" ]; then
+                    fail "Phase 3c alignment QC failed for: $aln_fail (see gate1_qc/alignment/*_alignment.png)"
+                elif [ "$aln_n" -ne "$aln_total" ]; then
+                    fail "Phase 3c alignment QC has $aln_n rows for $aln_total active tilt series — rerun with QC_MAX=0"
+                else
+                    aln_invalid=""
+                    for ts_file in "$TOMOSTAR_DIR"/*.tomostar; do
+                        [ -f "$ts_file" ] || continue
+                        ts_name=$(basename "$ts_file" .tomostar)
+                        d="$TILTSTACK_DIR/$ts_name"
+                        result="$WORK_DIR/gate1_qc/alignment/${ts_name}_alignment.json"
+                        if [ ! -f "$result" ] || [ "$d/$ts_name.xf" -nt "$result" ] || \
+                           [ "$d/$ts_name.st" -nt "$result" ] || [ "$result" -nt "$aln_tsv" ] || \
+                           ! python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r.get("pass") is True and r.get("xf") == sys.argv[2] else 1)' "$result" "$d/$ts_name.xf"; then
+                            aln_invalid="$aln_invalid $ts_name"
+                        fi
+                    done
+                    if [ -n "$aln_invalid" ]; then
+                        fail "Phase 3c alignment QC missing, stale or mismatched for:$aln_invalid — rerun scripts/warp_alignment_qc.slurm"
+                    else
+                        aln_done=$aln_total
+                        pass "Phase 3c alignment QC: every tilt on its neighbours' track for all $aln_n tilt series"
+                    fi
+                fi
+            fi
+            json_record phase_completion "alignment QC" "3c" "$aln_done" "$aln_total"
+        fi
+    fi
+
     # Phase 5: per-tomostar — WARP reconstruction for each tomostar
     check_per_ts 5 "WARP reconstruction" \
         "$WORK_DIR/warp_tiltseries/reconstruction/__TS__"_*Apx.mrc
@@ -925,6 +973,7 @@ if [ "$DRY_RUN" = "1" ]; then
     case "${PHASE:-all}" in
         3a) echo "  WarpTools ts_stack --angpix $ALIGN_ANGPIX" ;;
         3b) echo "  AreTomo2 -InMrc TS_XXX.st -OutMrc TS_XXX_ali.mrc -VolZ $((TOMO_DIM_Z / BINNING_FACTOR)) -AlignZ $((TOMO_DIM_Z / BINNING_FACTOR * 40 / 100)) -AngFile TS_XXX_neg.rawtlt" ;;
+        3c)  echo "  python scripts/alignment_qc.py --stack TS.st --xf TS.xf --tilts TS.rawtlt --angpix $ALIGN_ANGPIX --aln TS.st.aln" ;;
         3.5) echo "  python scripts/warp_settings.py update-from-mrc <tilt.settings> <frame.settings> $ALIGN_ANGPIX <AreTomo _ali.mrc files>" ;;
         3)   echo "  WarpTools ts_stack --angpix $ALIGN_ANGPIX"; echo "  AreTomo2 ... -AngFile TS_XXX_neg.rawtlt" ;;
         4)   echo "  WarpTools ts_import_alignments --alignment_angpix $ALIGN_ANGPIX" ;;

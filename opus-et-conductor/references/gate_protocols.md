@@ -17,6 +17,13 @@ decides, and what is written back to config + `.opus_run_state.json`.
   judging alignment/reconstruction quality from its slices (missing-wedge smearing,
   streaking, blank/failed volumes, no recognizable cellular density) and returning a
   per-TS verdict (`good` / `suspect`) with a one-line reason.
+- **Required alignment check** (Phase 3c, `opus-et-warp/scripts/warp_alignment_qc.slurm`):
+  applies AreTomo's `TS.xf` to the stack and measures each tilt against its angle
+  neighbours; fails a tilt more than 30 Å off its neighbours' track →
+  `gate1_qc/alignment/<TS>_alignment.{png,json}` + `gate1_qc/alignment_metrics.tsv`
+  (`bad_tilts`, `low_signal_tilts`, `max_drift_A`). AreTomo's shift track alone cannot
+  tell a stage jump from a lost track. A failing tilt is excluded or realigned; a
+  failing series with many bad tilts is realigned or excluded like any other TS.
 - **Required geometry check** (Phase 5c, `opus-et-warp/scripts/warp_geometry_qc.slurm`):
   for every TS, compares the raw 0° tilt, the AreTomo `_ali.mrc` (the TM volume) and
   the WARP reconstruction in physical units and fails on a scale error, poor agreement
@@ -25,8 +32,9 @@ decides, and what is written back to config + `.opus_run_state.json`.
   WARP volume showing the central half at 2× still looks like a good tomogram (the
   2026-09 incident). A `FAIL` row blocks the gate for the whole run, not just that TS,
   since the cause is usually shared sampling or alignment metadata.
-- Present: the per-TS verdicts + reasons, the slice previews, and the geometry
-  metrics table with its side-by-side PNGs.
+- Present: the per-TS verdicts + reasons, the slice previews, the alignment metrics
+  table with its per-tilt plots, and the geometry metrics table with its side-by-side
+  PNGs.
 - Decide: which tomograms to keep vs. exclude before template matching.
 - Persist: `checkpoints[] {gate:"alignment_qc", kept:[...], excluded:[...]}`. Exclude
   each rejected TS via the keep-list mechanism — relocate `TS.tomostar` →

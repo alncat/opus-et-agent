@@ -70,6 +70,12 @@ requires `--gres` in every script that calls a GPU tool.
 
 ## AreTomo Gotchas
 
+### A global alignment reports no residual (Phase 3c)
+With `NumPatches = 0` AreTomo2 writes shifts but no error, and a jumpy shift
+track proves nothing: on 20260907 neighbouring tilts were up to 860 px apart
+and aligned correctly. `warp_alignment_qc.slurm` applies `TS.xf` to the stack
+and measures each tilt against its angle neighbours; run it before Phase 4.
+
 ### Job timeout
 - AreTomo on many tilt series can run 12–24+ hours
 - Increase `#SBATCH --time=48:00:00` for large datasets

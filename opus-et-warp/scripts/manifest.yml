@@ -139,6 +139,24 @@ phases:
       - tiltstack/TS_XXX/TS_XXX.tlt
       - tiltstack/TS_XXX/TS_XXX.xf
 
+  3c:
+    description: "AreTomo alignment QC — per-tilt residual after applying TS.xf (required before Phase 4)"
+    requires_species: false
+    scripts:
+      - warp_alignment_qc.slurm
+    required_vars:
+      - WORK_DIR
+      - TOMOSTAR_DIR
+      - TILTSTACK_DIR
+      - ALIGN_ANGPIX
+      - OPUSET_ENV
+    required_conda:
+      - OPUSET_ENV
+    outputs:
+      - "gate1_qc/alignment/TS_XXX_alignment.png"
+      - "gate1_qc/alignment/TS_XXX_alignment.json"
+      - "gate1_qc/alignment_metrics.tsv"
+
   "3.5":
     description: "Update TOMO_DIMS in settings from AreTomo output ★ REQUIRED"
     requires_species: false

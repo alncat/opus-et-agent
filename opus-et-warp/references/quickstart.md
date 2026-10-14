@@ -57,6 +57,9 @@ sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_tiltseries_setup.slurm
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_export_stacks.slurm
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_aretomo_align_negate.slurm
 
+# Phase 3c: REQUIRED — per-tilt alignment QC (fails a tilt >30 Å off its neighbours)
+sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_alignment_qc.slurm
+
 # Phase 3.5: REQUIRED — update TOMO_DIMS from AreTomo output
 sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_update_tomo_dims.slurm
 

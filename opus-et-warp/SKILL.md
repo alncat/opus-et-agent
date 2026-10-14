@@ -29,9 +29,11 @@ Fill `pipeline.conf` + `species.conf`, run `validate.sh`, then submit each phase
 | 1: Frame series | Settings → link/motion correct → CTF | `warp_frameseries_import.slurm` |
 | 2: Tilt series | Import from MDOC → create settings | `warp_tiltseries_setup.slurm` |
 | 3: Alignment | Export stacks → AreTomo2 → negate angles | `warp_export_stacks.slurm`, `warp_aretomo_align_negate.slurm` |
+| 3c: Alignment QC | Apply AreTomo `.xf` to the stack → per-tilt residual vs angle neighbours; fails a tilt >30 Å off (required before Phase 4) | `warp_alignment_qc.slurm` |
 | 3.5: Update dims | Read binned dims from `_ali.mrc` → UNBINNED `TOMO_DIMS` → re-run `create_settings` | `warp_update_tomo_dims.slurm` |
 | 4: Import alignments | Import .xf/.tlt into WARP | `warp_import_alignments.slurm` |
 | 5: CTF + recon | Defocus handedness → CTF → reconstruct | `warp_ts_ctf.slurm`, `warp_ts_reconstruct.slurm` |
+| 5c: Geometry QC | Raw 0° tilt vs AreTomo vs WARP images in physical units (required before Phase 6) | `warp_geometry_qc.slurm` |
 | 6: Template matching | Generate TM-ready template → mask → jobs → run TM → extract → convert | `gen_template_from_mrc.slurm`, `gen_sphere_mask.slurm`, `gen_tm_jobs_aretomo.slurm`, `run_tm_sequential.slurm`, `extract_tm_candidates_parallel.slurm`, `convert_to_star.slurm`, `convert_pytom_to_warp.slurm` |
 | 7: Export | Export subtomograms for OPUS-ET | `warp_export_particles.slurm` |
 | 8a: Training mask | Generate sphere/density mask at `OUTPUT_ANGPIX` from subtomo sample | `gen_training_mask.slurm` |

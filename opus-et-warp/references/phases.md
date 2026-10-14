@@ -212,6 +212,53 @@ AreTomo2 \
     -Wbp 1
 ```
 
+### Phase 3c: AreTomo alignment QC (REQUIRED before Phase 4)
+
+A global AreTomo2 alignment (`NumPatches = 0` in `TS.st.aln`) reports no
+residual, and its shift track cannot tell a real stage jump from a lost track:
+on the 20260907 data neighbouring tilts were up to 860 px apart and were
+aligned correctly.
+
+```bash
+sbatch scripts/warp_alignment_qc.slurm
+```
+
+For every active tilt series, `alignment_qc.py` applies `TS.xf` (IMOD
+convention, the file Phase 4 imports) to the exported `TS.st`, block-averaged
+to about 9.5 Å, and cross-correlates each tilt with its angle neighbour after
+cosine-stretching the lower tilt (as IMOD's `tiltxcorr` does). Per-tilt
+position errors are solved from all pairs. The part a rigid specimen explains
+(`a cos t + b sin t`; `b` is the specimen's height above the tomogram's
+central plane) is removed, and the rest is judged:
+- **local error**: a tilt's departure from a robust line through its six
+  nearest neighbours. It **fails above 30 Å** and warns above 15 Å. A tilt the
+  alignment lost by a few hundred Å still gives a clear, displaced peak (the
+  whole correlation map is searched), so it fails rather than looking empty.
+- **drift**: the smooth remainder across the series. It warns above 25 Å and
+  suggests patch alignment. It cannot be told apart from specimen deformation.
+- **no reliable match**: a tilt whose correlation is below half that of nearby
+  tilts, or whose peak stands less than 12 robust SDs above the map's noise, is
+  set aside and warned about, not judged. Its neighbours are then compared
+  directly. Synthetic peaks below 9 SDs gave random shifts; 20260907 pairs
+  scored 28–280. Correlation falls steadily with tilt, so faint high tilts are
+  still judged.
+
+Distances use `ALIGN_ANGPIX`; the stack header is only cross-checked (warned if
+it differs). Outputs: `gate1_qc/alignment/<TS>_alignment.png` (per-tilt local
+error, residual across/along the axis, neighbour correlation),
+`<TS>_alignment.json`, and `gate1_qc/alignment_metrics.tsv`. The job exits
+non-zero if any tilt series fails or cannot be checked (fewer than 3 tilts,
+mismatched `.xf`/`.rawtlt`/stack counts). If one fails:
+- **one or two tilts over the limit**: exclude them (or realign with them
+  removed) before Phase 4. Their error will not average out.
+- **many tilts, or a step in the residual**: AreTomo lost the track. Realign
+  (check `-AlignZ`, `-DarkTol`, the tilt axis) before importing.
+- **large drift only**: consider patch alignment, M image warp, or a
+  low-tilt-only reconstruction for averaging.
+
+On 20260907 all 42 multi-tilt series passed: local errors up to 16 Å, drift up
+to 54 Å (tomo17), and a few empty or contaminated tilts set aside.
+
 ---
 
 ## Phase 3.5: Update TOMO_DIMS from AreTomo Output (REQUIRED)

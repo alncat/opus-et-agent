@@ -10,10 +10,12 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 | `warp_tiltseries_setup.slurm` | Tilt series settings + MDOC import | 128 GB |
 | `warp_export_stacks.slurm` | Export tilt stacks for alignment | 64 GB |
 | `warp_aretomo_align_negate.slurm` | AreTomo2 with angle negation | 32 GB |
+| `warp_alignment_qc.slurm` | Phase 3c: per-tilt residual after applying AreTomo's `.xf` (`alignment_qc.py`) | 24 GB |
 | `warp_update_tomo_dims.slurm` | Re-run `create_settings` with UNBINNED dims from `_ali.mrc` (Phase 3.5) | 16 GB |
 | `warp_import_alignments.slurm` | Import .xf/.tlt into WARP | 64 GB |
 | `warp_ts_ctf.slurm` | Defocus handedness check + CTF | 256 GB |
 | `warp_ts_reconstruct.slurm` | Tomogram reconstruction | 256 GB |
+| `warp_geometry_qc.slurm` | Phase 5c: raw tilt vs AreTomo vs WARP image geometry (`geometry_qc.py`) | 32 GB |
 | `gen_sphere_mask.slurm` | Sphere mask for TM | 16 GB |
 | `gen_template_from_mrc.slurm` | Generate PyTom TM template from user MRC map | 32 GB |
 | `gen_tm_jobs_aretomo.slurm` | Generate PyTOM job XMLs | 16 GB |
