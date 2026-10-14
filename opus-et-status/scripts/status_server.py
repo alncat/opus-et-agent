@@ -24,6 +24,7 @@ import cluster
 import config_edit
 import poller as poller_mod
 import sources
+import thon
 
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <title>OPUS-ET status</title>
@@ -263,6 +264,7 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <div id="frdose"></div>
 <h2>Per tilt series</h2>
 <div id="frseries"></div>
+<div id="frthon" style="margin-top:.8rem"></div>
 <h2>Alignment and geometry</h2>
 <div id="fralign"></div>
 <h2>Worst CTF resolution</h2>
@@ -652,7 +654,8 @@ function renderFrames(st){
       +'<th title="tilts at the search floor, aliased tilts far from the series '
       +'median, large scatter, or far from the mdoc TargetDefocus">CTF check</th></tr>'
       +rows.map(x=>`<tr${x.excluded?' class="excluded"':''}>
-        <td><code>${esc(x.name)}</code>${x.excluded
+        <td><a href="#frthon" title="show the Thon-ring fit for this tilt series"
+               onclick="showThon('${esc(x.name)}');return false"><code>${esc(x.name)}</code></a>${x.excluded
              ?' <span class="FAILED">excluded</span>':''}</td>
         <td class="num">${x.n_tilts==null?'&mdash;':x.n_tilts}</td>
         <td class="num">${frFmt(x.tilt_min)}&deg; &hellip; ${frFmt(x.tilt_max)}&deg;</td>
@@ -806,7 +809,8 @@ function renderTmScores(st){
 // cumulative; SerialEM often leaves ExposureDose at 0.
 function doseSvg(pts,mini){
   if(pts.length<3) return '';
-  const W=mini?320:640, H=mini?120:180, PL=mini?30:38, PR=10, PT=10, PB=mini?16:28;
+  // Room for axis titles: y title (rotated) on the left, x title below the ticks.
+  const W=mini?320:640, H=mini?150:200, PL=mini?52:58, PR=12, PT=10, PB=mini?34:38;
   const ds=pts.map(p=>p.cum_dose), rs=pts.map(p=>p.resolution);
   const dmax=Math.max.apply(null,ds), rmn=Math.min.apply(null,rs),
         rmx=Math.max.apply(null,rs);
@@ -826,20 +830,96 @@ function doseSvg(pts,mini){
     med.push({x:X(dmax*(i+0.5)/NB),y:Y(m),m:m});
   });
   const path=med.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' ');
+  const yMid=PT+(H-PT-PB)/2;
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto"
        role="img" aria-label="CTF resolution against accumulated dose">
+    <title>Each dot is one tilt: its per-movie CTF fit resolution (WARP Rsn, Å; smaller is better, so
+best is at the top) against the dose accumulated when it was acquired (tomostar _wrpDose, e⁻/Å²).
+Green: median resolution in each twelfth of the dose range. Axes are scaled to this plot's own data.</title>
     <line x1="${PL}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="var(--line-strong)"/>
     <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${H-PB}" stroke="var(--line-strong)"/>
     ${dots}
     <path d="${path}" fill="none" stroke="var(--green)" stroke-width="1.8"/>
-    <text x="${PL-4}" y="${PT+4}" font-size="9" text-anchor="end" fill="var(--muted)">${frFmt(rmn)}</text>
-    <text x="${PL-4}" y="${H-PB}" font-size="9" text-anchor="end" fill="var(--muted)">${frFmt(rmx)}</text>
+    <text x="${PL-4}" y="${PT+4}" font-size="9" text-anchor="end" fill="var(--muted)">${frFmt(rmn)} &#8491;</text>
+    <text x="${PL-4}" y="${PT+14}" font-size="8" text-anchor="end" fill="var(--muted)">best</text>
+    <text x="${PL-4}" y="${H-PB}" font-size="9" text-anchor="end" fill="var(--muted)">${frFmt(rmx)} &#8491;</text>
+    <text x="${PL-4}" y="${H-PB-10}" font-size="8" text-anchor="end" fill="var(--muted)">worst</text>
+    <text transform="translate(10 ${yMid}) rotate(-90)" font-size="9" text-anchor="middle"
+          fill="var(--muted)">CTF resolution (&#8491;)</text>
     <text x="${PL}" y="${H-PB+13}" font-size="9" fill="var(--muted)">0</text>
     <text x="${W-PR}" y="${H-PB+13}" font-size="9" text-anchor="end"
-          fill="var(--muted)">${frFmt(dmax)}</text>
-    ${mini?'':`<text x="${(W+PL)/2}" y="${H-2}" font-size="9" text-anchor="middle"
-          fill="var(--muted)">accumulated dose (e&#8315;/&#8491;&#178;) &mdash; y: CTF resolution, best at top; green = median per bucket</text>`}
+          fill="var(--muted)">${frFmt(dmax)} e&#8315;/&#8491;&#178;</text>
+    <text x="${(W+PL)/2}" y="${H-4}" font-size="9" text-anchor="middle"
+          fill="var(--muted)">accumulated dose (e&#8315;/&#8491;&#178;)${mini?'':
+          ' &#8212; green: median per dose bucket'}</text>
   </svg>`;
+}
+// --- Thon rings: one tilt's power spectrum and WARP's CTF fit --------------
+let thonState={series:null,movie:null};
+function showThon(series,movie){
+  thonState={series:series,movie:movie||null};
+  const el=document.getElementById('frthon');
+  el.innerHTML='<span class="muted">loading Thon rings for <code>'+esc(series)+'</code>…</span>';
+  const q='series='+encodeURIComponent(series)+(movie?'&movie='+encodeURIComponent(movie):'');
+  fetch('/api/thon?'+q).then(r=>r.json().then(d=>({ok:r.ok,d:d}))).then(({ok,d})=>{
+    if(!ok||d.error){ el.innerHTML='<span class="FAILED">'+esc(d.error||'failed')+'</span>'; return; }
+    if(thonState.series!==series) return;
+    renderThon(d);
+    el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }).catch(e=>{ el.innerHTML='<span class="FAILED">'+esc(String(e))+'</span>'; });
+}
+function thonSvg(d){
+  const c=d.curves||[], fr=d.fit_range||[0,0], W=620, H=240, PL=58, PR=14, PT=12, PB=48;
+  if(c.length<3) return '<span class="muted">no 1D spectrum in this movie’s XML</span>';
+  const fmin=fr[0]?fr[0]*0.6:c[1][0], fmax=c[c.length-1][0];
+  const inFit=c.filter(r=>r[0]>=fr[0]&&r[0]<=fr[1]);
+  const ys=(inFit.length?inFit:c).flatMap(r=>[r[1],r[2]]).sort((a,b)=>a-b);
+  const ylo=Math.min(0,ys[Math.floor(ys.length*0.01)]), yhi=ys[Math.floor(ys.length*0.99)]||1;
+  const X=f=>PL+(f-fmin)/(fmax-fmin)*(W-PL-PR);
+  const Y=v=>PT+(1-(Math.min(yhi,Math.max(ylo,v))-ylo)/((yhi-ylo)||1))*(H-PT-PB);
+  const pts=c.filter(r=>r[0]>=fmin);
+  const line=k=>pts.map((r,i)=>(i?'L':'M')+X(r[0]).toFixed(1)+' '+Y(r[k]).toFixed(1)).join(' ');
+  const ticks=[40,30,20,15,12,10,8,7,6,5,4.5].filter(a=>1/a>=fmin&&1/a<=fmax);
+  const zeros=(d.zeros||[]).filter(z=>z>=fmin&&z<=fmax);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:${W}px;height:auto"
+      role="img" aria-label="1D power spectrum and CTF fit">
+    <title>Grey: WARP's radially averaged power spectrum of this tilt (PS1D, background subtracted).
+Green: the fit WARP drew, |CTF(f)| at the fitted mean defocus times the fitted amplitude envelope.
+Shaded: the frequency range the fit used. Ticks below the axis: CTF zeros.</title>
+    <rect x="${X(Math.max(fr[0],fmin)).toFixed(1)}" y="${PT}" width="${(X(Math.min(fr[1],fmax))-X(Math.max(fr[0],fmin))).toFixed(1)}"
+          height="${H-PT-PB}" fill="var(--accent)" opacity=".07"/>
+    <line x1="${PL}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="var(--line-strong)"/>
+    <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${H-PB}" stroke="var(--line-strong)"/>
+    ${zeros.map(z=>`<line x1="${X(z).toFixed(1)}" y1="${H-PB}" x2="${X(z).toFixed(1)}" y2="${H-PB+5}" stroke="var(--muted)"/>`).join('')}
+    <path d="${line(1)}" fill="none" stroke="var(--muted)" stroke-width="1"/>
+    <path d="${line(2)}" fill="none" stroke="var(--green)" stroke-width="1.6"/>
+    ${ticks.map(a=>`<text x="${X(1/a).toFixed(1)}" y="${H-PB+17}" font-size="9" text-anchor="middle" fill="var(--muted)">${a}</text>`).join('')}
+    <text x="${(W+PL)/2}" y="${H-8}" font-size="9" text-anchor="middle" fill="var(--muted)">spatial frequency (&#8491;&#8315;&#185;), labelled as resolution in &#8491;</text>
+    <text transform="translate(12 ${PT+(H-PT-PB)/2}) rotate(-90)" font-size="9" text-anchor="middle"
+          fill="var(--muted)">power (a.u., background subtracted)</text>
+  </svg>`;
+}
+function renderThon(d){
+  const el=document.getElementById('frthon'), p=d.params||{}, fr=d.fit_range||[0,0];
+  const tilts=(d.tilts||[]).map(t=>`<button class="qcheck${t.movie===d.movie?' on':''}"
+      style="padding:.1rem .4rem;margin:.1rem" title="${esc(t.movie)}"
+      onclick="showThon('${esc(d.series)}','${esc(t.movie)}')">${frFix(t.angle,0)}&deg;</button>`).join('');
+  el.innerHTML=`<div class="qlab2">Thon rings &mdash; <code>${esc(d.series)}</code>, tilt ${frFix(d.angle,1)}&deg;
+      <span class="muted">(${esc(d.movie)})</span></div>
+    <div style="margin:.3rem 0">${tilts}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start">
+      <figure style="margin:0">${d.image?`<img alt="power spectrum" style="width:360px;max-width:100%;image-rendering:pixelated"
+          src="data:image/png;base64,${d.image}">`:'<span class="muted">no 2D power spectrum</span>'}
+        <figcaption class="muted" style="font-size:.8rem;max-width:360px">Left: measured power spectrum (half-plane, zero
+          frequency at the bottom centre, out to ${d.image_fmax?frFix(1/d.image_fmax,1):'?'} &#8491;).
+          Right: fitted CTF&#178; with the fitted defocus and astigmatism. Rings should continue across the midline.</figcaption></figure>
+      <div style="flex:1;min-width:320px">${thonSvg(d)}</div>
+    </div>
+    <div class="muted" style="font-size:.8rem;margin-top:.3rem">Frame-series (per-movie) fit from
+      <code>${esc(d.source||'')}</code>: defocus ${frFix(p.defocus,3)} &micro;m, astigmatism ${frFix(p.delta,3)} &micro;m
+      at ${frFix(p.angle,0)}&deg;, ${frFix(p.voltage,0)} kV, Cs ${frFix(p.cs,1)} mm, amplitude contrast ${frFix(p.amplitude,2)},
+      pixel ${frFix(p.pixel,3)} &#8491;. Fit range ${fr[0]?frFix(1/fr[0],1):'?'}&ndash;${fr[1]?frFix(1/fr[1],1):'?'} &#8491;;
+      WARP's CTF resolution estimate ${d.resolution_estimate==null?'&mdash;':frFix(d.resolution_estimate,1)+' &#8491;'}.</div>`;
 }
 function renderDose(f){
   const el=document.getElementById('frdose'), dose=f.dose||{};
@@ -857,6 +937,10 @@ function renderDose(f){
   const minis=keys.filter(k=>(dose[k].points||[]).length>=3);
   el.innerHTML=doseSvg(all)
     +(minis.length?`<div class="qlab2" style="margin-top:.7rem">Damage curve per tilt series</div>
+      <div class="muted" style="font-size:.8rem;margin-bottom:.3rem">One dot per tilt:
+      x = accumulated dose when the tilt was acquired (e&#8315;/&#8491;&#178;, tomostar <code>_wrpDose</code>),
+      y = that tilt's CTF fit resolution (&#8491;, WARP <code>Rsn</code>; best at top). Each panel is
+      scaled to its own series, so compare the labelled ranges, not the slopes.</div>
       <div class="hgrid">`
       +minis.map(k=>`<div class="hcard"><h4>${esc(k)}`
         +`<span class="muted" style="float:right">n ${(dose[k].points||[]).length}</span></h4>`
@@ -1874,6 +1958,46 @@ def build_status(snapshot, work_dir=None):
     }
 
 
+_THON_SAFE = __import__("re").compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def make_thon_fetch(client, work_dir, series_names, frames_dir, ttl=600.0):
+    """-> fetch(series, movie=None): one tilt's Thon-ring view.
+
+    The series must be a discovered tilt series and the movie one of its
+    tomostar rows, so no client string reaches a path unchecked. Results are
+    cached for `ttl` seconds (a CTF refit rewrites the XML).
+    """
+    cache = {}
+
+    def fetch(series, movie=None):
+        if series not in series_names() or not _THON_SAFE.match(series or ""):
+            raise ValueError(f"unknown tilt series: {series!r}")
+        tilts = thon.parse_tomostar_tilts(client.read_file(f"{work_dir}/tomostar/{series}.tomostar"))
+        if not tilts:
+            raise ValueError(f"no tilts in {series}.tomostar")
+        if movie is None:
+            movie = min(tilts, key=lambda t: abs(t[1]))[0]
+        if movie not in {m for m, _ in tilts} or not _THON_SAFE.match(movie):
+            raise ValueError(f"{movie!r} is not a tilt of {series}")
+        frames = frames_dir()
+        key = (frames, movie)
+        hit = cache.get(key)
+        if hit is None or time.monotonic() - hit[0] > ttl:
+            xml = client.read_file(f"{frames}/{movie}.xml")
+            try:
+                mrc = client.read_bytes(f"{frames}/powerspectrum/{movie}.mrc")
+            except Exception:
+                mrc = None
+            if len(cache) > 64:
+                cache.clear()
+            hit = cache[key] = (time.monotonic(), thon.thon_payload(xml, mrc))
+        angles = dict(tilts)
+        return dict(hit[1], series=series, movie=movie, angle=angles[movie], source=frames,
+                    tilts=[{"movie": m, "angle": a} for m, a in sorted(tilts, key=lambda t: t[1])])
+    return fetch
+
+
 def origin_hosts_for_bind(bind):
     """Hostnames a browser Origin may use for POSTs.
 
@@ -1890,7 +2014,7 @@ def origin_hosts_for_bind(bind):
 
 def make_handler(poller, editor, csrf_token, log_fetch=None, image_fetch=None,
                  render_qc=None, render_opts=None, thumb_fetch=None, run_label="",
-                 runs_parent="", work_dir="", origin_hosts=None):
+                 runs_parent="", work_dir="", origin_hosts=None, thon_fetch=None):
     allowed_origin_hosts = frozenset(origin_hosts or origin_hosts_for_bind("127.0.0.1"))
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -1977,6 +2101,17 @@ def make_handler(poller, editor, csrf_token, log_fetch=None, image_fetch=None,
                          for x in ((ts.data if ts is not None and ts.data else []) or [])]
                 entries = [sources.parse_qc_name(i, known) for i in imgs]
                 return self._send(200, jdump({"images": imgs, "entries": entries}))
+            if path == "/api/thon":
+                if thon_fetch is None:
+                    return self._send(404, jdump({"error": "Thon rings unavailable"}))
+                series = (qs.get("series") or [""])[0]
+                movie = (qs.get("movie") or [""])[0] or None
+                try:
+                    return self._send(200, jdump(thon_fetch(series, movie)))
+                except ValueError as exc:
+                    return self._send(400, jdump({"error": str(exc)[:200]}))
+                except Exception as exc:
+                    return self._send(404, jdump({"error": str(exc)[:200]}))
             if path == "/api/qc/image":
                 rel = (qs.get("path") or [""])[0]
                 st = poller.snapshot().get("qc_images")
@@ -2357,6 +2492,12 @@ def main(argv=None):
         p.refresh_due()
         return expected
 
+    def _series_names():
+        st = p.snapshot().get("tilt_series")
+        return {s.name for s in ((st.data if st is not None else None) or [])}
+
+    thon_fetch = make_thon_fetch(client, wd, _series_names, lambda: current_dirs()["frames"])
+
     token = secrets.token_urlsafe(32)
     # Several instances on different ports is the documented pattern, so the
     # page must say which host/run it is watching.
@@ -2367,7 +2508,8 @@ def main(argv=None):
                                             run_label=label,
                                             runs_parent=args.runs_parent,
                                             work_dir=wd,
-                                            origin_hosts=origin_hosts_for_bind(args.bind)))
+                                            origin_hosts=origin_hosts_for_bind(args.bind),
+                                            thon_fetch=thon_fetch))
     print(f"OPUS-ET status on http://{args.bind}:{args.port}  (ctrl-c to stop)")
     try:
         httpd.serve_forever()
