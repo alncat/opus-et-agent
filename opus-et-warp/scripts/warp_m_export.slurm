@@ -80,11 +80,17 @@ if ! conda activate "$OPUSET_ENV"; then
     echo "ERROR: Failed to activate OPUSET_ENV=$OPUSET_ENV"
     exit 1
 fi
+# convert_warp takes the pixel size as a positional argument (MCore writes
+# coordinates in Å; it divides by it) and always writes <input>_relion.star next
+# to its input — it has no -o. dsdsh ignores the converter's exit code, so check
+# for the output file instead.
 for ps in "${PARTICLES_STARS[@]}"; do
-    out="${ps%_particles.star}_relion.star"
+    out="${ps%.star}_relion.star"
     echo "Converting: $(basename "$ps") -> $(basename "$out")"
-    if ! dsdsh convert_warp "$ps" -o "$out"; then
-        echo "ERROR: convert_warp failed for $ps"
+    rm -f "$out"
+    dsdsh convert_warp "$ps" "$COORDS_ANGPIX"
+    if [ ! -s "$out" ]; then
+        echo "ERROR: convert_warp did not write $out"
         exit 1
     fi
 done

@@ -133,3 +133,19 @@ def test_every_slurm_script_is_reachable():
                          and s.name not in gate_tools
                          and s.name not in fallback)
     assert not unreachable, unreachable
+
+
+@pytest.mark.parametrize("script", [s.name for s in SLURM])
+def test_convert_warp_is_called_with_its_real_signature(script):
+    """`dsdsh convert_warp <star> <angpix>` takes the pixel size positionally and
+    writes <star>_relion.star itself; it has no -o. The old `-o <out>` call died
+    on argparse ("invalid float value"), and dsdsh discards the converter's exit
+    code, so a failed conversion has to be caught by checking the output file."""
+    text = (SCRIPTS / script).read_text()
+    calls = [l for l in text.splitlines()
+             if re.search(r"dsdsh\s+convert_warp\b", l) and not l.lstrip().startswith(("#", "echo"))]
+    for call in calls:
+        assert " -o " not in call, call
+        assert re.search(r"convert_warp\s+\S+\s+\S*ANGPIX", call), call
+    if calls:
+        assert re.search(r"\[\s*!\s*-s\s", text), "check the converted STAR exists"

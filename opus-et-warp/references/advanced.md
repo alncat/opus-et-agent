@@ -170,9 +170,10 @@ is therefore a two-step pipeline:
 ```bash
 SPECIES_DIR=$(find "$M_DIR/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" | head -1)
 
-# Step 1: convert WARP-style particles.star → RELION-style relion.star
+# Step 1: convert WARP-style particles.star → RELION-style <name>_relion.star
+# (positional pixel size: MCore coordinates are in Å; output lands next to the input)
 for ps in "${SPECIES_DIR}"/*_particles.star; do
-    dsdsh convert_warp "$ps" -o "${ps%_particles.star}_relion.star"
+    dsdsh convert_warp "$ps" "$COORDS_ANGPIX"   # writes ${ps%.star}_relion.star
 done
 
 # Step 2: re-export subtomos using the converted STAR

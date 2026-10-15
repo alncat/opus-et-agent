@@ -677,7 +677,7 @@ project/                              # = $WORK_DIR
             ├── mask.mrc              # thresholded molecule mask (NOT a sphere)
             ├── <species>_filt.mrc    # filtered consensus map (MCore output)
             ├── <species>_particles.star # refined per-particle poses (MCore output, WARP STAR)
-            └── <species>_relion.star    # RELION-style copy made by `dsdsh convert_warp`
+            └── <species>_particles_relion.star # RELION-style copy made by `dsdsh convert_warp`
                                          #   (required input to ts_export_particles)
 ```
 
