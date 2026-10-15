@@ -177,6 +177,7 @@ def spectrum_png(mrc_bytes, fit, fmax=None):
     cx, cy = nx // 2, ny - 1
     k1, k2, _ = _ks(p)
     k3 = math.atan(p['amplitude'] / math.sqrt(1 - p['amplitude'] ** 2))
+    phase = p['phase'] * math.pi
     dz0, ddz = -p['defocus'] * 1e4, -p['delta'] * 1e4 * 0.5
     ang0 = math.radians(p['angle'])
     lo_f = (fit['fit_range'] or [fmax * 0.15, fmax])[0]
@@ -209,7 +210,7 @@ def spectrum_png(mrc_bytes, fit, fmax=None):
                 # convention (verified by correlating fits against spectra).
                 a = math.atan2(-dy, dx)
                 dz = dz0 + ddz * math.cos(2 * (a - ang0))
-                v = math.sin(k1 * dz * f * f + k2 * f ** 4 - k3) ** 2
+                v = math.sin(k1 * dz * f * f + k2 * f ** 4 - phase - k3) ** 2
             out[j * width + i] = int(255 * min(1.0, max(0.0, v)))
     return png_gray(width, height, out), fmax
 

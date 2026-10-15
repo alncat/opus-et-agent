@@ -247,8 +247,11 @@ Distances use `ALIGN_ANGPIX`; the stack header is only cross-checked (warned if
 it differs). Outputs: `gate1_qc/alignment/<TS>_alignment.png` (per-tilt local
 error, residual across/along the axis, neighbour correlation),
 `<TS>_alignment.json`, and `gate1_qc/alignment_metrics.tsv`. The job exits
-non-zero if any tilt series fails or cannot be checked (fewer than 3 tilts,
-mismatched `.xf`/`.rawtlt`/stack counts). If one fails:
+non-zero if any tilt series fails or cannot be checked (fewer than 3 reliable
+tilts, disconnected reliable pair measurements, or mismatched
+`.xf`/`.rawtlt`/stack counts). Insufficient evidence requires inspection of the
+image signal, overlap and alignment; it does not establish that an alignment
+is wrong. If one fails:
 - **one or two tilts over the limit**: exclude them (or realign with them
   removed) before Phase 4. Their error will not average out.
 - **many tilts, or a step in the residual**: AreTomo lost the track. Realign
@@ -256,7 +259,11 @@ mismatched `.xf`/`.rawtlt`/stack counts). If one fails:
 - **large drift only**: consider patch alignment, M image warp, or a
   low-tilt-only reconstruction for averaging.
 
-On 20260907 all 42 multi-tilt series passed: local errors up to 16 Å, drift up
+Validation requires QC to match the current stack, `.xf`, `.rawtlt` and
+`ALIGN_ANGPIX`. Rerun Phase 3c after changing those inputs. Older QC results
+without the saved tilt-file path also need a rerun.
+
+In the original 20260907 check all 42 multi-tilt series passed: local errors up to 16 Å, drift up
 to 54 Å (tomo17), and a few empty or contaminated tilts set aside.
 
 ---

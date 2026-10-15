@@ -779,9 +779,21 @@ if [ "$DRY_RUN" != "1" ]; then
                         ts_name=$(basename "$ts_file" .tomostar)
                         d="$TILTSTACK_DIR/$ts_name"
                         result="$WORK_DIR/gate1_qc/alignment/${ts_name}_alignment.json"
-                        if [ ! -f "$result" ] || [ "$d/$ts_name.xf" -nt "$result" ] || \
-                           [ "$d/$ts_name.st" -nt "$result" ] || [ "$result" -nt "$aln_tsv" ] || \
-                           ! python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r.get("pass") is True and r.get("xf") == sys.argv[2] else 1)' "$result" "$d/$ts_name.xf"; then
+                        if [ ! -f "$result" ] || [ ! -f "$d/$ts_name.st" ] || \
+                           [ ! -f "$d/$ts_name.rawtlt" ] || [ "$d/$ts_name.xf" -nt "$result" ] || \
+                           [ "$d/$ts_name.st" -nt "$result" ] || [ "$d/$ts_name.rawtlt" -nt "$result" ] || \
+                           [ "$result" -nt "$aln_tsv" ] || \
+                           ! python3 -c '
+import json, math, sys
+try:
+    r = json.load(open(sys.argv[1]))
+    valid = (r.get("pass") is True and r.get("xf") == sys.argv[2]
+             and r.get("stack") == sys.argv[3] and r.get("tilt_file") == sys.argv[4]
+             and math.isclose(float(r["stack_angpix"]), float(sys.argv[5]), rel_tol=1e-9))
+except (OSError, ValueError, TypeError, KeyError, AttributeError):
+    valid = False
+sys.exit(0 if valid else 1)
+' "$result" "$d/$ts_name.xf" "$d/$ts_name.st" "$d/$ts_name.rawtlt" "$ALIGN_ANGPIX"; then
                             aln_invalid="$aln_invalid $ts_name"
                         fi
                     done

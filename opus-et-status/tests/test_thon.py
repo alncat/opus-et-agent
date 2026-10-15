@@ -1,5 +1,6 @@
 """Thon-ring view: WARP's per-movie CTF fit re-drawn from its saved data."""
 import json
+import math
 import struct
 import sys
 import urllib.error
@@ -81,6 +82,21 @@ def test_non_float_spectrum_is_rejected():
     struct.pack_into('<i', bad, 12, 1)
     with pytest.raises(ValueError, match='mode 1'):
         thon.read_mrc_2d(bytes(bad))
+
+
+@pytest.mark.parametrize('phase', [0.0, 0.25, 0.5])
+def test_spectrum_model_matches_phase_shifted_ctf(monkeypatch, phase):
+    # Inspect the pixels sent to the PNG writer. With zero astigmatism the
+    # model should match the independently evaluated 1D CTF at every radius.
+    p = dict(PARAMS, phase=phase, delta=0.0)
+    fit = thon.parse_movie_ctf(movie_xml(p))
+    monkeypatch.setattr(thon, 'png_gray', lambda w, h, pixels: (w, h, pixels))
+    (width, height, pixels), _ = thon.spectrum_png(mrc_bytes(), fit, fmax=1 / 8)
+    for dx, dy in ((10, 0), (30, 20), (60, 40)):
+        f = math.hypot(dx, dy) / (fit['window'] * p['pixel'])
+        expected = int(255 * thon.ctf_1d(p, f) ** 2)
+        actual = pixels[(height - 1 - dy) * width + width // 2 + dx]
+        assert abs(actual - expected) <= 1
 
 
 class FakeClient:

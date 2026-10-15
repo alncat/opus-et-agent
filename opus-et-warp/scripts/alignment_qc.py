@@ -169,7 +169,7 @@ def prepare(img, row, b, px):
     """Aligned, band-passed section and its valid-data mask."""
     valid = apply_xf(np.ones_like(img), row, b, order=1) > 0.999
     out = apply_xf(img, row, b)
-    out = np.where(valid, out - out[valid].mean(), 0.0)
+    out = np.where(valid, out - (out[valid].mean() if valid.any() else 0.0), 0.0)
     return bandpass(out, px), valid
 
 
@@ -215,6 +215,22 @@ def solve_errors(pairs, tilts):
     """
     n = len(tilts)
     used = [p for p in pairs if p['dx'] is not None]
+    # Separate components have unconstrained relative positions. Least squares
+    # can still return small (even zero) residuals, which are not a QC pass.
+    neighbours = [set() for _ in range(n)]
+    for p in used:
+        neighbours[p['lo']].add(p['hi'])
+        neighbours[p['hi']].add(p['lo'])
+    seen, pending = set(), [0] if n else []
+    while pending:
+        k = pending.pop()
+        if k not in seen:
+            seen.add(k)
+            pending.extend(neighbours[k] - seen)
+    if n < 3 or len(seen) != n:
+        raise ValueError('insufficient alignment evidence: reliable tilt-pair measurements '
+                         'are disconnected or cover fewer than three tilts; '
+                         'inspect the images and alignment before rerunning QC')
     t = np.radians(np.asarray(tilts, float))
     ax, ay = np.zeros((len(used), n)), np.zeros((len(used), n))
     dx, dy = np.zeros(len(used)), np.zeros(len(used))
@@ -222,8 +238,8 @@ def solve_errors(pairs, tilts):
         s = math.cos(t[p['hi']]) / math.cos(t[p['lo']])
         ax[k, p['hi']], ax[k, p['lo']], dx[k] = 1.0, -s, p['dx']
         ay[k, p['hi']], ay[k, p['lo']], dy[k] = 1.0, -1.0, p['dy']
-    ex = np.linalg.lstsq(ax, dx, rcond=None)[0] if used else np.zeros(n)
-    ey = np.linalg.lstsq(ay, dy, rcond=None)[0] if used else np.zeros(n)
+    ex = np.linalg.lstsq(ax, dx, rcond=None)[0]
+    ey = np.linalg.lstsq(ay, dy, rcond=None)[0]
     g = np.stack([np.cos(t), np.sin(t)], axis=1)
     coef = np.linalg.lstsq(g, ex, rcond=None)[0]
     return ex - g @ coef, ey - ey.mean(), float(coef[1])
@@ -296,15 +312,16 @@ def analyse(sections, xf, tilts, stack_angpix, block=1, header_angpix=None, aln=
                if best_cc[k] < LOW_CC_FRACTION * _nearby_median(best_cc, tilts, k)
                or best_sig[k] < MIN_SIGNIFICANCE}
     keep = [k for k in range(n) if k not in low_set]
-    if low_set and len(keep) >= 3:
+    if len(keep) < 3:
+        raise ValueError('insufficient reliable tilts: {} of {} (need at least three); '
+                         'inspect image signal and overlap before rerunning QC'.format(len(keep), n))
+    if low_set:
         pairs, maxshift = measure_pairs(prepared, tilts, keep, px)
-    else:
-        keep = list(range(n))
     sub = np.asarray(tilts, float)[keep]
     remap = {k: i for i, k in enumerate(keep)}
     local_pairs = [dict(p, lo=remap[p['lo']], hi=remap[p['hi']]) for p in pairs]
     rx_k, ry_k, zc = solve_errors([p for p in local_pairs
-                                   if p['dx'] is None or p['significance'] >= MIN_SIGNIFICANCE], sub)
+                                   if p['dx'] is not None and p['significance'] >= MIN_SIGNIFICANCE], sub)
     lx_k, ly_k = local_errors(rx_k, sub), local_errors(ry_k, sub)
     rx, ry, lx, ly = (np.full(n, np.nan) for _ in range(4))
     rx[keep], ry[keep], lx[keep], ly[keep] = rx_k, ry_k, lx_k, ly_k
@@ -426,7 +443,8 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         print('{}: could not run: {}'.format(name, exc))
         return 2
-    result.update(tilt_series=name, stack=str(args.stack), xf=str(args.xf))
+    result.update(tilt_series=name, stack=str(args.stack), xf=str(args.xf),
+                  tilt_file=str(args.tilts))
     Path(args.out_prefix + '_alignment.json').write_text(json.dumps(result, indent=1))
     try:
         plot(result, args.out_prefix + '_alignment.png', name)

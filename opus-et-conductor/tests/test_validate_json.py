@@ -3,6 +3,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 WARP = REPO / "opus-et-warp"
 
@@ -91,3 +93,49 @@ def test_assume_env_skips_env_and_tool_checks(tmp_path):
         "--assume-env must skip the WarpTools existence check"
     # Errors strictly decrease once env/tool failures are removed.
     assert on["errors"] < off["errors"]
+
+
+@pytest.mark.parametrize('change', [None, 'angles', 'pixel', 'missing_angles',
+                                   'legacy', 'wrong_angles', 'wrong_stack'])
+def test_alignment_qc_requires_current_inputs(tmp_path, change):
+    conf, work = _minimal_pipeline_conf(tmp_path)
+    stars = work / 'tomostar'
+    stars.mkdir()
+    (stars / 'TS_1.tomostar').write_text('data_\n')
+    stack_dir = work / 'warp_tiltseries' / 'tiltstack' / 'TS_1'
+    stack_dir.mkdir(parents=True)
+    for suffix in ('st', 'xf', 'rawtlt'):
+        path = stack_dir / ('TS_1.' + suffix)
+        path.touch()
+        os.utime(path, (100, 100))
+    qc_dir = work / 'gate1_qc' / 'alignment'
+    qc_dir.mkdir(parents=True)
+    result = qc_dir / 'TS_1_alignment.json'
+    record = {'pass': True, 'xf': str(stack_dir / 'TS_1.xf'),
+              'stack': str(stack_dir / 'TS_1.st'),
+              'tilt_file': str(stack_dir / 'TS_1.rawtlt'), 'stack_angpix': 4.0}
+    if change == 'angles':
+        (stack_dir / 'TS_1.rawtlt').write_text('3\n0\n-3\n')
+        os.utime(stack_dir / 'TS_1.rawtlt', (400, 400))
+    elif change == 'pixel':
+        conf.write_text(conf.read_text().replace('ALIGN_ANGPIX=4.0', 'ALIGN_ANGPIX=8.0'))
+    elif change == 'missing_angles':
+        (stack_dir / 'TS_1.rawtlt').unlink()
+    elif change == 'legacy':
+        record.pop('tilt_file')
+    elif change == 'wrong_angles':
+        record['tilt_file'] = '/another/TS_1.rawtlt'
+    elif change == 'wrong_stack':
+        record['stack'] = '/another/TS_1.st'
+    result.write_text(json.dumps(record))
+    os.utime(result, (200, 200))
+    summary = qc_dir.parent / 'alignment_metrics.tsv'
+    summary.write_text('TS\tverdict\nTS_1\tpass\n')
+    os.utime(summary, (300, 300))
+    proc = subprocess.run(
+        ['bash', str(WARP / 'validate.sh'), '--json', '--phase', '3c', '--assume-env'],
+        env={**os.environ, 'PIPELINE_CONF': str(conf)}, capture_output=True, text=True)
+    data = json.loads(proc.stdout)
+    checks = [c for c in data['checks'] if c['message'].startswith('Phase 3c alignment QC')]
+    assert len(checks) == 1, data
+    assert checks[0]['status'] == ('pass' if change is None else 'fail'), checks

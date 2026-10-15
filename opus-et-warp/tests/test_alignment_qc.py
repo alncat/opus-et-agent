@@ -173,11 +173,47 @@ def test_faint_high_tilts_are_still_judged():
 def test_tilts_too_noisy_to_measure_are_set_aside_not_failed():
     # Correct alignment, but the highest tilts are so noisy that their
     # correlation peaks are random: they must not fail a good alignment.
-    r = analyse(noise=lambda t: 0.15 + 12 * abs(t) / 45)
+    r = analyse(noise=lambda t: 0.15 + 8 * abs(t) / 45)
     assert r['pass'], r['problems']
     low = [row['tilt'] for row in r['tilts'] if row['low_signal']]
     assert low and min(abs(t) for t in low) > 20, low
     assert r['max_local_error_A'] < qc.LOCAL_FAIL_A
+
+
+def test_noisy_series_with_disconnected_measurements_requires_review():
+    # This previously passed because least squares assigned arbitrary relative
+    # positions to two disconnected groups. Ground-truth alignment is correct,
+    # but these measurements cannot establish that, so QC must not certify it.
+    with pytest.raises(ValueError, match='disconnected'):
+        analyse(noise=lambda t: 0.15 + 12 * abs(t) / 45)
+
+
+@pytest.mark.parametrize('usable', [(), (14, 15)])
+def test_insufficient_reliable_tilts_cannot_pass(usable):
+    with pytest.raises(ValueError, match='insufficient reliable tilts'):
+        analyse(blank=[k for k in range(len(TILTS)) if k not in usable])
+
+
+def test_no_overlap_cannot_pass():
+    with pytest.raises(ValueError, match='insufficient reliable tilts'):
+        analyse(xf_error={k: (1000, 1000) for k in range(len(TILTS))})
+
+
+def test_disconnected_reliable_pairs_cannot_pass(monkeypatch):
+    measure = qc.measure_pairs
+
+    def broken_link(*args, **kwargs):
+        pairs, maxshift = measure(*args, **kwargs)
+        # Each tilt still has a good neighbour, but nothing measures the
+        # displacement between the two halves of the series.
+        for p in pairs:
+            if {p['lo'], p['hi']} == {14, 15}:
+                p['significance'] = 0.0
+        return pairs, maxshift
+
+    monkeypatch.setattr(qc, 'measure_pairs', broken_link)
+    with pytest.raises(ValueError, match='disconnected'):
+        analyse()
 
 
 def write(path, data, voxel=PX):
@@ -186,8 +222,8 @@ def write(path, data, voxel=PX):
         m.voxel_size = voxel
 
 
-def run(tmp_path, xf_rows, tilts=TILTS, header=PX):
-    sections, xf = series()
+def run(tmp_path, xf_rows, tilts=TILTS, header=PX, blank=()):
+    sections, xf = series(blank=blank)
     write(tmp_path / 'TS_1.st', sections, header)
     (tmp_path / 'TS_1.xf').write_text(''.join(
         '{:.3f} {:.3f} {:.3f} {:.3f} {:.2f} {:.2f}\n'.format(*r) for r in xf[:xf_rows]))
@@ -206,6 +242,7 @@ def test_cli_writes_json_and_png_and_warns_on_a_wrong_header(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     r = json.loads((tmp_path / 'TS_1_alignment.json').read_text())
     assert r['pass'] and r['tilt_series'] == 'TS_1' and r['tilt_axis'] == -1.5
+    assert r['tilt_file'] == str(tmp_path / 'TS_1.rawtlt')
     assert any('header says 19.000' in w for w in r['warnings'])
     assert any('NumPatches = 0' in w for w in r['warnings'])
     assert (tmp_path / 'TS_1_alignment.png').read_bytes()[:4] == b'\x89PNG'
@@ -227,4 +264,11 @@ def test_cli_refuses_mismatched_inputs(tmp_path):
     proc = run(tmp_path, len(TILTS) - 1)
     assert proc.returncode == 2
     assert 'xf 30 lines' in proc.stdout
+    assert not (tmp_path / 'TS_1_alignment.json').exists()
+
+
+def test_cli_refuses_to_certify_noise_only_series(tmp_path):
+    proc = run(tmp_path, len(TILTS), blank=range(len(TILTS)))
+    assert proc.returncode == 2
+    assert 'insufficient reliable tilts' in proc.stdout
     assert not (tmp_path / 'TS_1_alignment.json').exists()
