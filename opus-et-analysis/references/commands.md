@@ -42,9 +42,9 @@ Reconstruct real-space volumes from the analysis. Reads the centers/trajectories
 dsdsh eval_vol <resdir> <epoch> {kmeans,pc,dpc,joint} <num> <apix>
 ```
 
-- k-means-center maps: `dsdsh eval_vol . 39 kmeans 20 3.37` → `analyze.39/kmeans20/reference<k>.mrc`
-- PC-traversal maps:   `dsdsh eval_vol . 39 pc 3 3.37`      → `analyze.39/pc<i>/`
-- `apix` = the **original** pixel size (`model_args.Apix * dataset_args.downfrac`).
+- k-means-center maps: `dsdsh eval_vol . 39 kmeans 20 <original_apix>` → `analyze.39/kmeans20/reference<k>.mrc`
+- PC-traversal maps:   `dsdsh eval_vol . 39 pc 3 <original_apix>`      → `analyze.39/pc<i>/`
+- `apix` = the **exported subtomogram** pixel size (`model_args.Apix * dataset_args.downfrac`), obtained with `extract_config.py`; do not substitute the raw detector pixel size.
 
 Low-level equivalent (builds the z-file paths yourself):
 ```bash
@@ -78,7 +78,7 @@ uses the refined poses instead of the original template-matching poses:
 
 ```bash
 dsd parse_pose_star <starfile> -D <SUBTOMO_BOX_SIZE> --Apix <subtomo_apix> \
-    --poses <resdir>/pose.<epoch>.pkl --out-star <refined.star>
+    --poses <resdir>/pose.<epoch>.pkl --outstar <refined.star>
 ```
 
 `-D` must be the **subtomogram box size** (`SUBTOMO_BOX_SIZE` = lattice `D`−1) and `--Apix` the
@@ -103,7 +103,7 @@ dsdsh combine_star <starfile1> <starfile2> <output.star>
 ```
 
 ## Config values (`config.pkl`)
-Read with `python scripts/extract_config.py config.pkl`:
+Read with `python <skill-dir>/scripts/extract_config.py config.pkl`:
 
 - `model_args.Apix` — training-effective pixel size (NOT the original)
 - `dataset_args.downfrac` — downsampling fraction
@@ -116,17 +116,22 @@ Read with `python scripts/extract_config.py config.pkl`:
 
 ## Common Analysis Workflow (Gate 3 — state selection)
 
-1. **Extract config:** `python scripts/extract_config.py config.pkl`
+`<skill-dir>` is the absolute analysis-skill directory. For SLURM commands,
+set `SKILL_DIR` to the absolute WARP-skill directory and prepare its
+`pipeline.conf` and `species.conf` as described in
+`opus-et-warp/references/configuration.md`. Run analysis in the training result directory.
+
+1. **Extract config:** `python <skill-dir>/scripts/extract_config.py config.pkl`
    → note `original_Apix` and `effective_box_size`.
-2. **Analyze + reconstruct (one job):** `sbatch opus-et-warp/scripts/analyze_opuset.slurm`
+2. **Analyze + reconstruct (one job):** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/analyze_opuset.slurm"`
    — runs `dsdsh analyze . 39 <numpc> <numk>` then `dsdsh eval_vol` for k-means (and PC) maps.
-3. **Identify real states:** `python scripts/compare_to_template.py --maps
+3. **Identify real states:** `python <skill-dir>/scripts/compare_to_template.py --maps
    'analyze.39/kmeans20/reference*.mrc' --template <ref.mrc> --labels
    analyze.39/kmeans20/labels.pkl -o state_vs_template` — masked CC to template + consensus.
    Combine with a 3D view of the maps (ChimeraX) — template-CC rejects junk, but map
    **resolution/detail** distinguishes the *best* state (a low-res template rewards smooth blobs).
-4. **Select clusters → sel.star (one job):** `sbatch --export=ALL,SELECT_CLUSTERS="8 9 10 11"
-   opus-et-warp/scripts/select_state.slurm` — runs `dsdsh parse_pose` then chains
+4. **Select clusters → sel.star (one job):** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",SELECT_CLUSTERS="8 9 10 11"
+   "$SKILL_DIR/scripts/select_state.slurm"` — runs `dsdsh parse_pose` then chains
    `dsdsh combine_star` over the chosen `pre<k>.star`.
 5. **Pose pickle for the selection (before M / fixed-mode):**
    `dsd parse_pose_star sel.star -D <effective_box_size> --Apix <original_apix> -o sel_pose.pkl`

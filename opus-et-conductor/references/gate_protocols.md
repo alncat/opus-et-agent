@@ -3,6 +3,17 @@
 Each gate: what the conductor auto-prepares, what it presents, what the scientist
 decides, and what is written back to config + `.opus_run_state.json`.
 
+## Persisting decisions
+
+Use `run_state.GATES` as the shared gate vocabulary. Before asking for a decision,
+call `open_checkpoint(state, gate, next_phase)` and `save_state(state)`.
+After an explicit decision, call
+`record_checkpoint(state, gate, "approved" or "rejected", phase=next_phase, **evidence)`
+and save again. Approved phases become `ready`; rejected/pending phases stay at
+`checkpoint`. On resume use `gate_approved(state, gate)` before reopening it.
+Do not record approval from QC metrics alone. Gates 0/1/TM/2/3/4 use
+`setup`, `alignment_qc`, `tm_params`, `picks_qc`, `state_selection`, `refine`.
+
 ## Gate 0 — Setup (before Phase 1)
 - Prepare: auto-detect frame type (extension + MRC Z-dim), pixel size (mdoc/header),
   tomo dims; fill `pipeline.conf` + `species.conf` (defined in `opus-et-warp/references/configuration.md`).
@@ -45,7 +56,7 @@ decides, and what is written back to config + `.opus_run_state.json`.
 
 ## Gate `tm_params` — TM parameter selection (before Phase 6)
 The *before-Phase-6* decision of which matching parameters to run — distinct from Gate 2's
-*after-Phase-6* score threshold. Design: `docs/superpowers/specs/2026-07-08-tm-auto-params-design.md`.
+*after-Phase-6* score threshold.
 - Prepare (mask — implemented): run `opus-et-warp/scripts/tm_auto_mask.py` on the
   **native-resolution** template → `mask_radius_angstrom` + radial-profile PNG. Set
   `MASK_RADIUS = round(mask_radius_angstrom / ALIGN_ANGPIX)` and `MASK_SIGMA` in
@@ -80,7 +91,8 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
     Fan out one agent per TS (parallel to Gate 1's `slice_preview`):
     `python .../tm_picks_overlay.py --tomogram <recon.mrc> --picks <TS_XXX_particles.xml|*_warp.star> -o gate2_qc/TS_XXX`
 - Decide: score threshold + suspicious-TS exclusions.
-- Persist: `MIN_SCORE`; record exclusions with `run_state.exclude_tomostar(state, ts)`.
+- Persist: `MIN_SCORE`; record exclusions with `run_state.exclude_tomostar(state, ts)`;
+  record the `picks_qc` decision for next phase `7`.
 - Honor the keep-list without editing any SLURM script, by relocating each excluded
   TS's INPUT ARTIFACT FOR THE NEXT PHASE out of that phase's input directory (a
   sibling `excluded/` subdir the glob skips):
@@ -140,9 +152,15 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
   cluster, and combines the chosen clusters → `sel_<label>.star`.
 - QC: `state_tomo_stats.py` (per-tomogram selected count/fraction — a high fraction flags a
   dense, cap-limited tomogram → candidate for the pick-more re-pick, §6.4 + §8.7).
-- Persist: `artifacts.selected_states`, `sel.star` path.
+- Persist: `artifacts.selected_states`, `sel.star` path, and the `state_selection` decision
+  for next phase `8c`.
 
 ## Gate 4 — Half-map resolution + refine sign-off (after fixed-mode)
+
+Phase 8d (`prepare_m_halfmaps.slurm`) prepares `$WORK_DIR/opuset/$TM_LABEL/half1.mrc`,
+`half2.mrc` and `halfmap_mask.mrc` for M. Verify the discovered pair belongs to
+the intended disjoint selected-particle half-sets. In the QC commands below,
+`half1.mrc` and `half2.mrc` denote those verified files; use their full paths.
 - **Fixed-mode half-maps:** split `sel_<label>.star` into two gold-standard halves →
   `warp_tiltseries/<label>_matching_subset{1,2}.star`. The split is a RANDOM ~50/50 partition
   that preserves the star header: keep the header lines up to the first data row, random-permute
@@ -173,4 +191,5 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
 - **M refinement** (`warp_m_*`, advanced.md) takes half1/half2 + mask + `sel.star` → refined
   tilt-series alignment + per-particle poses → higher-res map + `<species>_matching_refined.star`
   (input to the in-cell ArtiaX finale).
-- Persist: `artifacts.resolution_A`, `mask.mrc`, half-map paths.
+- Persist: `artifacts.resolution_A`, `mask.mrc`, half-map paths, and the `refine` decision
+  for next phase `M`.

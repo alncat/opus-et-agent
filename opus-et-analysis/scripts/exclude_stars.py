@@ -1,57 +1,69 @@
-import starfile
-import pandas as pd
+#!/usr/bin/env python3
+"""Exclude query particles nearest to reference picks within a physical radius."""
+import argparse
+import math
+from pathlib import Path
+import pickle
+
 import numpy as np
-import os
-import sys
-import pickle as pkl
-#from io import StringIO
+import pandas as pd
+import starfile
 
-file_name = sys.argv[1]
-df = starfile.read(file_name)
-file_name1 = sys.argv[2]
-df1 = starfile.read(file_name1)
-mics = df1['rlnMicrographName'].unique()
-print("length of these two starfiles: ", len(df), len(df1))
-print(f"exclude {file_name} from {file_name1}")
-coords = ['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']
-df_exclude = pd.DataFrame()
-# auto-detect original angpix from config.pkl: apix / downfrac
-try:
-    config = pkl.load(open('config.pkl', 'rb'))
-    angpix = config['model_args']['Apix'] * config['dataset_args']['downfrac']
-    print(f"auto-detected original angpix from config.pkl: {angpix:.4f} A")
-except FileNotFoundError:
-    angpix = 3.37
-    print(f"config.pkl not found, using default angpix: {angpix} A")
-#print(df['rlnMicrographName'].unique(), df1['rlnMicrographName'].unique())
-#sys.exit()
-#mics = [sys.argv[3]]#['TS_026', 'TS_027', 'TS_028', 'TS_029', 'TS_030', 'TS_034', 'TS_037', 'TS_041', 'TS_043', 'TS_045']
-print(file_name1, 'has', len(mics), 'micrographs')
-total = 0
-for mic in mics:
-    #df_ = df[df['rlnMicrographName'] == (mic+'.tomostar')].reset_index()
-    df_ = df[df['rlnMicrographName'] == (mic)].reset_index()
-    positions = df_[coords]
-    #df1_ = df1[df1['rlnMicrographName'] == (mic+'.tomostar')].reset_index()
-    df1_ = df1[df1['rlnMicrographName'] == (mic)].reset_index()
-    if df_.shape[0] == 0:
-        df_exclude = pd.concat([df_exclude, df1_], axis=0)
-        continue
-    positions1 = df1_[coords]
-    dist2 = np.sum((positions.to_numpy()[:, None, :3] - positions1.to_numpy()[None, :, :3]) ** 2, axis=-1)
-    min_idx = np.argmin(dist2, axis=1)
-    found = np.sqrt(dist2[range(df_.shape[0]), min_idx]) < 136/angpix
-    #print(min_idx)
-    print(df1_.index, dist2.shape, found.shape)
-    df1_exclude = df1_[~df1_.index.isin(min_idx[found])].reset_index()
-    total += found.sum()
-    #print(df1_.shape, df_.shape, df1_, df1_exclude)
-    #print(df1_exclude.shape, df1_.shape)
-    print(mic, found.sum(), len(found), 'keep', df1_exclude.shape[0]/df1_.shape[0], 'hit', found.sum()/len(found))
-    df_exclude = pd.concat([df_exclude, df1_exclude], axis=0)
-print(total, len(df))
-df_exclude = df_exclude.drop(columns=['level_0', 'index'])
-#print(df_exclude.head())
-starfile.write(df_exclude, file_name1[:-5] + '_exclude.star', overwrite=True)
-sys.exit(0)
+COORDS = ['rlnCoordinateX', 'rlnCoordinateY', 'rlnCoordinateZ']
 
+
+def read_particles(path):
+    data = starfile.read(path)
+    if isinstance(data, pd.DataFrame):
+        return data
+    for block in data.values():
+        if set(COORDS).issubset(block.columns):
+            return block
+    raise ValueError(f'no particle coordinate block in {path}')
+
+
+def exclude_particles(reference, query, angpix, distance=136.0):
+    """Preserve query rows/columns, excluding the nearest hit per reference pick."""
+    if not all(math.isfinite(v) and v > 0 for v in (angpix, distance)):
+        raise ValueError('angpix and distance must be positive and finite')
+    keep = np.ones(len(query), dtype=bool)
+    for mic in query['rlnMicrographName'].unique():
+        positions = reference.loc[reference['rlnMicrographName'] == mic, COORDS].to_numpy()
+        indices = np.flatnonzero((query['rlnMicrographName'] == mic).to_numpy())
+        if not len(positions):
+            continue
+        candidates = query.iloc[indices][COORDS].to_numpy()
+        dist2 = ((positions[:, None, :] - candidates[None, :, :]) ** 2).sum(axis=-1)
+        nearest = dist2.argmin(axis=1)
+        matched = dist2[np.arange(len(positions)), nearest] < (distance / angpix) ** 2
+        keep[indices[nearest[matched]]] = False
+    return query.iloc[np.flatnonzero(keep)].reset_index(drop=True)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('reference', help='Reference picks to exclude')
+    parser.add_argument('query', help='Query STAR whose remaining rows are written')
+    parser.add_argument('--angpix', type=float, help='Coordinate pixel size in Angstroms')
+    parser.add_argument('--config', default='config.pkl', help='Training config used if --angpix is omitted')
+    parser.add_argument('--distance', type=float, default=136.0, help='Exclusion radius in Angstroms (default 136)')
+    parser.add_argument('-o', '--out', help='Output STAR (default <query>_exclude.star)')
+    args = parser.parse_args(argv)
+    try:
+        angpix = args.angpix
+        if angpix is None:
+            with open(args.config, 'rb') as handle:
+                config = pickle.load(handle)
+            angpix = float(config['model_args']['Apix']) * float(config['dataset_args'].get('downfrac', 1.0))
+        result = exclude_particles(read_particles(args.reference), read_particles(args.query),
+                                   angpix, args.distance)
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        parser.error(f'{exc}; provide --angpix explicitly or a valid --config')
+    output = args.out or str(Path(args.query).with_suffix('')) + '_exclude.star'
+    starfile.write(result, output, overwrite=True)
+    print(f'Kept {len(result)} particles at {angpix:g} A/px -> {output}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

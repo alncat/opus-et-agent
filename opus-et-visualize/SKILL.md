@@ -1,6 +1,6 @@
 ---
 name: opus-et-visualize
-description: Use when the user wants molecules shown in their cellular context: a refined map placed at every particle pose inside the original tomogram in ChimeraX/ArtiaX, coloured by conformational state or species, a hero in-cell render or movie, or picks marked on the raw tomogram density to check they land on real particles rather than ice or carbon. ChimeraX/ArtiaX runs on the local desktop, not the cluster.
+description: "Use when the user wants molecules shown in their cellular context: a refined map placed at every particle pose inside the original tomogram in ChimeraX/ArtiaX, coloured by conformational state or species, a hero in-cell render or movie, or picks marked on the raw tomogram density to check they land on real particles rather than ice or carbon. ChimeraX/ArtiaX runs on the local desktop, not the cluster."
 ---
 
 # OPUS-ET Visualize (in-cell scenes)
@@ -21,7 +21,7 @@ conformational state, via ChimeraX + ArtiaX.
 - **ChimeraX `tile` resets lighting** — run `lighting soft` (and any `lighting` command)
   AFTER `tile #* columns N`, or it won't apply.
 - **Judge Gate-3 state resolution in 3D at a HIGH percentile contour, not by CC.** Render the
-  k-means state gallery with `gen_gallery_cxc.py --percentile 98` (per-map 98th-percentile
+  k-means state gallery with `python <repo-dir>/demo/gen_gallery_cxc.py --maps-dir <maps> --out gallery.cxc --percentile 98` (per-map 98th-percentile
   contour). ChimeraX's default/auto contour sits too low and renders high-res detail as
   low-density "speckle" that reads as junk. Two traps invert the ranking: (a) a sharp
   high-res map correlates *less* with the blurry averaged consensus / low-res template, so
@@ -41,7 +41,7 @@ conformational state, via ChimeraX + ArtiaX.
 ## Convention landmine — DEFUSE FIRST (spec §7.1)
 ArtiaX vs RELION angle + pixel-size conventions are the top risk. Before rendering
 thousands, validate ONE particle:
-1. `particle_transform(row, tomo_angpix)` gives `[R|t]` for particle N.
+1. `particle_transform(row, tomo_angpix)` gives `[R|t]` in Å for particle N after `reconcile_coords` applies RELION origin shifts.
 2. Load the map into ChimeraX and place it with that transform; compare against a
    manual `fitmap` of the map into the tomogram at that particle.
 3. Only once one particle lands correctly, render the full scene.
@@ -65,10 +65,13 @@ df = gs.attach_labels(
                          coords_angpix=A, tomo_angpix=A),
     labels,
 )
+# Labels correspond to the full STAR: filter only after attaching them.
+df = df[df["rlnMicrographName"] == "TS_026.tomostar"]
+assert len(df), "No picks for the displayed tomogram"
 stars = {s: gs.write_relion_star(df, f"state{s}.star", state=s)
          for s in sorted(set(df["state"]))}
 gs.emit_cxc(tomogram="TS_026.mrc", map_path="ref.mrc",
-            state_stars=stars, out_cxc="scene.cxc")
+            state_stars=stars, out_cxc="scene.cxc", coords_angpix=A)
 ```
 Produces one RELION star per state plus `scene.cxc`.
 
@@ -105,6 +108,6 @@ scripts/
   slice_preview.py       # CLI — central-slice tomogram previews (Gate-1 alignment QC)
 tests/                   # pytest — test_scene_pose + test_scene_coords (gen_artiax_scene),
                          #   test_particle_gallery, test_tm_picks_overlay, test_slice_preview
-```
 references/
   artiax.md              # scene recipe, raw-density reveals, hero render, ChimeraX/ArtiaX gotchas
+```

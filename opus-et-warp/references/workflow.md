@@ -1,5 +1,8 @@
 # WARP/OPUS-ET Complete Workflow
 
+Initialize configuration and exported `SKILL_DIR` using `configuration.md`.
+Run manual WarpTools commands in `$WORK_DIR`; use absolute script paths below.
+
 ## Test on a small subset first (long-running phases only)
 
 For phases that take many hours per submission, validate the configuration on
@@ -61,12 +64,12 @@ WarpTools fs_ctf \
     --cs 2.7 \
     --grid 2x2x1 \
     --range_max 7 \
-    --defocus_max 8
+    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX"
 ```
 
 ### 1.4 (Alternative) Use SLURM Script for Frame Series
 ```bash
-sbatch scripts/warp_frameseries_import.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_frameseries_import.slurm"
 ```
 This script automates steps 1.1-1.3 with configurable parameters.
 
@@ -96,7 +99,7 @@ WarpTools ts_import \
 
 ### 2.3 (Alternative) Use SLURM Script for Tilt Series Setup
 ```bash
-sbatch scripts/warp_tiltseries_setup.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_tiltseries_setup.slurm"
 ```
 This script automates steps 2.1-2.2 with configurable parameters.
 
@@ -114,17 +117,18 @@ Output: `warp_tiltseries/tiltstack/TS_XXX/TS_XXX.st` and `TS_XXX.rawtlt`
 
 ### 3.2 (Alternative) Use SLURM Script for Export
 ```bash
-sbatch scripts/warp_export_stacks.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_stacks.slurm"
 ```
 This script exports tilt stacks with automatic pixel size calculation from settings.
 
 ### 3.3 Run AreTomo2 Alignment
 ```bash
+awk '{print -$1}' TS_026.rawtlt > TS_026_neg.rawtlt
 AreTomo2 \
     -InMrc TS_026.st \
     -OutMrc TS_026_ali.mrc \
     -OutBin 1 \
-    -AngFile TS_026.rawtlt \
+    -AngFile TS_026_neg.rawtlt \
     -OutImod 2 \
     -VolZ 256 \
     -Gpu 0 \
@@ -135,11 +139,16 @@ AreTomo2 \
     -Wbp 1
 ```
 
+After AreTomo completes, negate its IMOD `.tlt` output back into WARP's
+convention before importing; copy `.xf` unchanged. The script below performs
+both conversions and resolves AreTomo's output directory. Prefer it over the
+manual example.
+
 ### 3.4 (Alternative) Use SLURM Script for AreTomo2 + WARP Prep
 
 **Option A: Angle negation method (recommended for consistency)**
 ```bash
-sbatch scripts/warp_aretomo_align_negate.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_aretomo_align_negate.slurm"
 ```
 This script:
 1. Negates `.rawtlt` → `_neg.rawtlt` (WARP → AreTomo convention)
@@ -147,6 +156,18 @@ This script:
 3. Negates output back (AreTomo → WARP convention)
 
 This ensures consistent angle conversion throughout the workflow.
+
+## Required checks before Phase 4: 3c and 3.5
+
+```bash
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_alignment_qc.slurm"
+# Wait for a successful QC result before continuing.
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_update_tomo_dims.slurm"
+```
+
+Phase 3c checks image alignment. Phase 3.5 updates unbinned `TOMO_DIMS`
+from the reconstructed volume dimensions and voxel size. Both must finish
+before importing alignments; see `phases.md` for recovery steps.
 
 ## Phase 4: Import Alignment Parameters
 
@@ -162,7 +183,7 @@ WarpTools ts_import_alignments \
 
 **SLURM script:**
 ```bash
-sbatch scripts/warp_import_alignments.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_import_alignments.slurm"
 ```
 
 **IMPORTANT:** Use the SAME binned pixel size as used in AreTomo2 alignment (e.g., 13.48 for 4x binning). The alignment parameters (.xf, .tlt) are in binned pixel units.
@@ -195,12 +216,12 @@ WarpTools ts_ctf \
     --cs 2.7 \
     --window 512 \
     --range_high 7 \
-    --defocus_max 8
+    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX"
 ```
 
 **SLURM script** (includes defocus handedness check):
 ```bash
-sbatch scripts/warp_ts_ctf.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_ctf.slurm"
 ```
 
 ### 5.3 Reconstruct Tomograms
@@ -217,21 +238,30 @@ WarpTools ts_reconstruct \
 
 **SLURM script:**
 ```bash
-sbatch scripts/warp_ts_reconstruct.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_reconstruct.slurm"
 ```
+
+## Required geometry QC before Phase 6: 5c
+
+```bash
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_geometry_qc.slurm"
+```
+
+Wait for passing geometry checks comparing the raw tilt, AreTomo and WARP
+volumes before template matching or export.
 
 ## Phase 6: Template Matching 
 
 ### 6.1 Generate Sphere Mask
 ```bash
-sbatch scripts/gen_sphere_mask.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_sphere_mask.slurm"
 ```
 
 Creates a spherical mask `ribo_mask.mrc` (`<TM_LABEL>_mask.mrc`) matching the template dimensions.
 
 ### 6.2 Generate Template Matching Job XMLs
 ```bash
-sbatch scripts/gen_tm_jobs_aretomo.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_tm_jobs_aretomo.slurm"
 ```
 
 Generates `template_matching/<TM_LABEL>/jobs/TS_XXX/job.xml` files configured to use:
@@ -242,7 +272,7 @@ Generates `template_matching/<TM_LABEL>/jobs/TS_XXX/job.xml` files configured to
 
 ### 6.3 Run Template Matching Jobs
 ```bash
-sbatch scripts/run_tm_sequential.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/run_tm_sequential.slurm"
 ```
 
 Runs all template matching jobs **sequentially** on a single node:
@@ -253,7 +283,7 @@ Runs all template matching jobs **sequentially** on a single node:
 
 ### 6.4 Extract Particle Candidates
 ```bash
-sbatch scripts/extract_tm_candidates_parallel.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/extract_tm_candidates_parallel.slurm"
 ```
 
 Extracts particle candidates from template matching results:
@@ -281,7 +311,7 @@ at the base cap — raising theirs only adds noise (clustering drops it, but was
 
 ### 6.5 Convert to STAR Format
 ```bash
-sbatch scripts/convert_to_star.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_to_star.slurm"
 ```
 
 Converts PyTom particle XML files to STAR format:
@@ -289,7 +319,7 @@ Converts PyTom particle XML files to STAR format:
 
 ### 6.6 Convert to WARP Format
 ```bash
-sbatch scripts/convert_pytom_to_warp.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_pytom_to_warp.slurm"
 ```
 
 Converts PyTom STAR files to WARP-compatible format:
@@ -325,7 +355,7 @@ coordinate pixel size). Keep the two distinct.
 
 **SLURM script:**
 ```bash
-sbatch scripts/warp_export_particles.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_particles.slurm"
 ```
 
 Required flags for OPUS-ET compatibility:
@@ -382,13 +412,13 @@ dsd parse_pose_star warp_tiltseries/<TM_LABEL>_matching.star \
 
 ### 8.1 Generate Training Mask (Optional)
 ```bash
-sbatch scripts/gen_training_mask.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_training_mask.slurm"
 ```
 Density-shaped mask; skip it and `train_opuset.slurm` auto-creates a default sphere.
 
 ### 8.2 Train the heterogeneity model (grad mode)
 ```bash
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp scripts/train_opuset.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset.slurm"
 ```
 - 4 GPUs, `NUM_EPOCHS` (default 40, ~10 min/epoch), `ZDIM=8`, `ZAFFINEDIM=6`.
 - Uses the subtomogram `OUTPUT_ANGPIX` for `--angpix` (correct CTF).
@@ -397,8 +427,8 @@ sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp scripts/train_opuset.slurm
 
 ### 8.3 Analyze the latent space (Gate-3 prep)
 ```bash
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,ANALYZE_NUMK=20,ANALYZE_PC_NUM=0 \
-       scripts/analyze_opuset.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",ANALYZE_NUMK=20,ANALYZE_PC_NUM=0 \
+       "$SKILL_DIR/scripts/analyze_opuset.slurm"
 ```
 Runs `dsdsh analyze` (PCA + k-means + UMAP) then `dsdsh eval_vol kmeans` (cluster-center
 maps) → `analyze.<epoch>/kmeans<numk>/` (`labels.pkl`, `reference<k>.mrc`, UMAP/PCA plots).
@@ -410,8 +440,8 @@ The installed `dsdsh eval_vol` is **positional**: `dsdsh eval_vol <resdir> <epoc
 **without editing `species.conf`** (which pins `OUTPUT_DIR` and would clobber a plain
 `--export`). The epoch auto-detects from the latest `z.<N>.pkl` in that dir:
 ```bash
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,OUTPUT_DIR_OVERRIDE=opuset/ribo/z8_expanded,\
-       ANALYZE_NUMK=20 scripts/analyze_opuset.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",OUTPUT_DIR_OVERRIDE=opuset/ribo/z8_expanded,\
+       ANALYZE_NUMK=20 "$SKILL_DIR/scripts/analyze_opuset.slurm"
 ```
 
 ### 8.4 Identify real states (Gate 3 — multi-signal)
@@ -434,8 +464,8 @@ candidate for the cap-raising re-pick (§6.4) + warm-start (§8.7).
 
 ### 8.5 Build the selection star (with refined poses)
 ```bash
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,SELECT_CLUSTERS="8 9 10" \
-       scripts/select_state.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",SELECT_CLUSTERS="8 9 10" \
+       "$SKILL_DIR/scripts/select_state.slurm"
 ```
 Injects the OPUS-ET-**refined** poses (`pose.<epoch>.pkl`, `-D SUBTOMO_BOX_SIZE`,
 `--Apix OUTPUT_ANGPIX`) into the particles star, splits by cluster, and combines the chosen
@@ -466,12 +496,12 @@ PY
 (An `rlnRandomSubset` column is optional here since the two halves are separate files;
 `train_opuset_fixed` picks its half via `FIXED_SUBSET_LABEL`.) Then run each:
 ```bash
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,FIXED_SUBSET_LABEL=1 scripts/train_opuset_fixed.slurm
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,FIXED_SUBSET_LABEL=2 scripts/train_opuset_fixed.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=1 "$SKILL_DIR/scripts/train_opuset_fixed.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=2 "$SKILL_DIR/scripts/train_opuset_fixed.slurm"
 ```
 Each averages its half → `opuset/<TM_LABEL>/fixed_subset<N>/`. `FIXED_SUBSET_LABEL` is
 env-overridable (must not be pinned in `species.conf`, or both jobs collide on subset 1).
-The half-map is the **mean of each subset's per-rank `tmp*.mrc`**.
+Each subset's **`tmp0.mrc` is already its complete half-map**; DDP ranks hold duplicate maps, not independent half-maps.
 
 ### 8.6b Resolution QC (molecule mask + gold-standard FSC)
 Derive a mask that follows the density (a **sphere induces a spurious high-frequency FSC
@@ -507,11 +537,11 @@ To fold in more picks (e.g. raise the per-tomogram candidate cap on ribosome-den
 tomograms), re-extract + re-export the extra particles, build an expanded star, and
 continue from a checkpoint:
 ```bash
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,\
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",\
   LOAD_CHECKPOINT=<resdir>/weights.<N>.pkl,\
   EXPORT_STAR_OVERRIDE=<expanded.star>,\
   OUTPUT_DIR_OVERRIDE=<new_dir>,\
-  NUM_EPOCHS_OVERRIDE=<N+1+warm> scripts/train_opuset.slurm
+  NUM_EPOCHS_OVERRIDE=<N+1+warm> "$SKILL_DIR/scripts/train_opuset.slurm"
 ```
 `--load` restores encoder + decoder only (poses come from `--poses`, so all can start from
 TM), and it sets `start_epoch = N+1` — so `NUM_EPOCHS = N+1+<warm epochs>` (e.g. load
@@ -555,48 +585,57 @@ distinct output dir with e.g. `FIXED_SUBSET_LABEL=1_symD3` →
 
 ## Quick SLURM Submission
 
-For automated processing, use:
+Submit one command at a time, waiting for success and required gate approval
+before the next. Do not submit this entire block concurrently:
 ```bash
 # Phase 1: Frame series import + CTF
-sbatch scripts/warp_frameseries_import.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_frameseries_import.slurm"
 
 # Phase 2: Tilt series setup (settings + MDOC import)
-sbatch scripts/warp_tiltseries_setup.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_tiltseries_setup.slurm"
 
 # Phase 3: Export tilt stacks for alignment
-sbatch scripts/warp_export_stacks.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_stacks.slurm"
 
 # Phase 3: Run AreTomo2 alignment + prepare for WARP
-sbatch scripts/warp_aretomo_align_negate.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_aretomo_align_negate.slurm"
+
+# Phase 3c: Alignment QC must pass
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_alignment_qc.slurm"
+# Phase 3.5: Update dimensions from reconstructed volume
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_update_tomo_dims.slurm"
 
 # Phase 4: Import alignments into WARP
-sbatch scripts/warp_import_alignments.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_import_alignments.slurm"
 
 # Phase 5: CTF estimation (includes defocus handedness check)
-sbatch scripts/warp_ts_ctf.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_ctf.slurm"
 
 # Phase 5: Reconstruction
-sbatch scripts/warp_ts_reconstruct.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_reconstruct.slurm"
+
+# Phase 5c: Geometry QC must pass
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_geometry_qc.slurm"
 
 # Phase 6: Template matching (optional)
-sbatch scripts/gen_sphere_mask.slurm               # Generate mask
-sbatch scripts/gen_tm_jobs_aretomo.slurm           # Generate job XMLs
-sbatch scripts/run_tm_sequential.slurm             # Run TM jobs
-sbatch scripts/extract_tm_candidates_parallel.slurm # Extract particles
-sbatch scripts/convert_to_star.slurm               # Convert to STAR
-sbatch scripts/convert_pytom_to_warp.slurm         # Convert to WARP format
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_sphere_mask.slurm"               # Generate mask
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_tm_jobs_aretomo.slurm"           # Generate job XMLs
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/run_tm_sequential.slurm"             # Run TM jobs
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/extract_tm_candidates_parallel.slurm" # Extract particles
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_to_star.slurm"               # Convert to STAR
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_pytom_to_warp.slurm"         # Convert to WARP format
 
 # Phase 7: Export for OPUS-ET
-sbatch scripts/warp_export_particles.slurm         # Export subtomograms
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_particles.slurm"         # Export subtomograms
 
-# Phase 8: OPUS-ET Training + Gate-3 state selection (all take SKILL_DIR=$PWD/opus-et-warp)
-sbatch scripts/gen_training_mask.slurm             # (optional) density training mask
-sbatch scripts/train_opuset.slurm                  # 8.2 heterogeneity training (grad mode)
-sbatch scripts/analyze_opuset.slurm                # 8.3 dsdsh analyze + eval_vol (kmeans maps)
+# Phase 8: OPUS-ET Training + Gate-3 state selection (all take SKILL_DIR="$SKILL_DIR")
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_training_mask.slurm"             # (optional) density training mask
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset.slurm"                  # 8.2 heterogeneity training (grad mode)
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/analyze_opuset.slurm"                # 8.3 dsdsh analyze + eval_vol (kmeans maps)
 #    -> 8.4 Gate 3: compare_to_template.py + state_consistency.py + UMAP + ChimeraX gallery
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,SELECT_CLUSTERS="..." scripts/select_state.slurm  # 8.5 sel star (refined poses)
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,FIXED_SUBSET_LABEL=1 scripts/train_opuset_fixed.slurm  # 8.6 half1
-sbatch --export=ALL,SKILL_DIR=$PWD/opus-et-warp,FIXED_SUBSET_LABEL=2 scripts/train_opuset_fixed.slurm  # 8.6 half2
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",SELECT_CLUSTERS="..." "$SKILL_DIR/scripts/select_state.slurm"  # 8.5 sel star (refined poses)
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=1 "$SKILL_DIR/scripts/train_opuset_fixed.slurm"  # 8.6 half1
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=2 "$SKILL_DIR/scripts/train_opuset_fixed.slurm"  # 8.6 half2
 ```
 
 ## File Organization
@@ -685,7 +724,7 @@ project/                              # = $WORK_DIR
 
 ### OutOfMemoryException
 - Use 256GB+ RAM
-- All SLURM scripts include `ulimit -v unlimited` to remove virtual memory limits
+- Use `ulimit -v unlimited` in memory-intensive submissions to remove virtual memory limits
 
 ### CTF estimation fails
 - Ensure frame series CTF is done first

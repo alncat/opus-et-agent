@@ -7,6 +7,7 @@ user; and a hub that does not know one of its own skills exists makes the
 README lie.
 """
 import re
+import json
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,15 @@ def test_description_is_trigger_sized(skill):
     assert len(d) <= 500, f"{skill}: {len(d)} chars"
     fm, _ = _frontmatter(skill)
     assert len(fm) <= 1024
+
+
+@pytest.mark.parametrize('skill', SKILLS)
+def test_description_is_a_valid_quoted_yaml_scalar(skill):
+    # JSON string syntax is also valid YAML. Require this portable subset so
+    # descriptions containing ': ' cannot become invalid YAML mappings.
+    fm, _ = _frontmatter(skill)
+    scalar = re.search(r'^description: (.+)$', fm, re.M).group(1)
+    assert isinstance(json.loads(scalar), str)
 
 
 # One realistic ask per skill and the words an agent would search for. The

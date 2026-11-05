@@ -1,13 +1,16 @@
 # opus-et-warp: quickstart
 
+Set the absolute exported `SKILL_DIR` and configure the run as described in
+`configuration.md` before using these commands.
+
 Moved verbatim from SKILL.md so the skill body stays an overview; this is the reference.
 
 ## Quick Start
 
-1. **Copy examples:** `cp pipeline.example.conf pipeline.conf && cp species.example.conf species.conf`
+1. **Prepare configuration:** follow `configuration.md` to copy the examples and export `SKILL_DIR`.
 2. **Edit `pipeline.conf` and `species.conf`** — fill all variables (paths, pixel sizes, labels, etc.)
-3. **Run `bash validate.sh --phase 1`** — checks placeholders, paths, tools, derived sanity
-4. **Submit Phase 1:** `sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_frameseries_import.slurm`
+3. **Run `bash "$SKILL_DIR/validate.sh" --phase 1`** — checks placeholders, paths, tools, derived sanity
+4. **Submit Phase 1:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_frameseries_import.slurm"`
 
 ### Variables Reference
 
@@ -20,10 +23,10 @@ Defined once, in `references/configuration.md` -- the two-file convention, `SKIL
 
 **Run before submitting any job:**
 ```bash
-bash validate.sh                        # full check
-bash validate.sh --phase 1              # Phase 1 only
-bash validate.sh --phase 6 --species species_ribo.conf  # Phase 6, specific species
-bash validate.sh --phase 7 --dry-run    # resolve paths + print commands
+bash "$SKILL_DIR/validate.sh"                        # full check
+bash "$SKILL_DIR/validate.sh" --phase 1              # Phase 1 only
+bash "$SKILL_DIR/validate.sh" --phase 6 --species "$SKILL_DIR/species_ribo.conf"  # Phase 6, specific species
+bash "$SKILL_DIR/validate.sh" --phase 7 --dry-run    # resolve paths + print commands
 ```
 
 All pre-submission checks are handled by `validate.sh`:
@@ -38,37 +41,37 @@ All pre-submission checks are handled by `validate.sh`:
 
 ### WARP Environment Notes
 
-> ⚠ **`ulimit -v unlimited` is mandatory.** WARP, MTools, MCore, and AreTomo allocate very large virtual address spaces. Without it they fail at startup with cryptic errors. Every shipped SLURM script already includes this line.
+> ⚠ **`ulimit -v unlimited` is mandatory.** WARP, MTools, MCore, and AreTomo allocate very large virtual address spaces. Without it they fail at startup with cryptic errors. Check that your submission includes this line; it is not present in every shipped script.
 
 **`WARP_FORCE_MRC_FLOAT32=1`** forces 32-bit float MRC outputs (set in every shipped script). Disk-space tradeoff: 32-bit floats ~2× the size of WARP's compact int16 default. Drop the export if downstream tools handle compressed format and disk is tight.
 
 ### Full Pipeline (SLURM)
 ```bash
 # All sbatch commands must pass SKILL_DIR so scripts find pipeline.conf:
-#   sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/...
+#   sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/..."
 
 # Phase 1: Frame series
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_frameseries_import.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_frameseries_import.slurm"
 
 # Phase 2: Tilt series setup
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_tiltseries_setup.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_tiltseries_setup.slurm"
 
 # Phase 3: Export stacks + AreTomo2 alignment
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_export_stacks.slurm
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_aretomo_align_negate.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_stacks.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_aretomo_align_negate.slurm"
 
 # Phase 3c: REQUIRED — per-tilt alignment QC (fails a tilt >30 Å off its neighbours)
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_alignment_qc.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_alignment_qc.slurm"
 
 # Phase 3.5: REQUIRED — update TOMO_DIMS from AreTomo output
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_update_tomo_dims.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_update_tomo_dims.slurm"
 
 # Phase 4: Import alignments
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_import_alignments.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_import_alignments.slurm"
 
 # Phase 5: CTF + reconstruction
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_ts_ctf.slurm
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_ts_reconstruct.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_ctf.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_reconstruct.slurm"
 
 # Verify Phase 3–5 alignment chain: compare physical FOV and density placement.
 # AreTomo output or later resampling can have a different voxel size:
@@ -93,25 +96,25 @@ sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_ts_reconstruct.slurm
 # Script-specific overrides (edit only if defaults don't fit):
 #   gen_tm_jobs_aretomo.slurm: SEARCH_REGION=""  (full X/Y, z_start=20)
 #   extract_tm_candidates_parallel.slurm: EXTRACT_MASK_RADIUS=14  (non-max suppression)
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/gen_template_from_mrc.slurm
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/gen_sphere_mask.slurm
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/gen_tm_jobs_aretomo.slurm
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/run_tm_sequential.slurm
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/extract_tm_candidates_parallel.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_template_from_mrc.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_sphere_mask.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_tm_jobs_aretomo.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/run_tm_sequential.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/extract_tm_candidates_parallel.slurm"
 # PyTom XML → per-tilt-series STAR. Canonical path: two SLURM steps below.
 # Do not use a combined particles.star here.
 # convert_to_star.slurm and convert_pytom_to_warp.slurm must use the same
 # TM_LABEL, so they read/write template_matching/$TM_LABEL/star_files and warp_star.
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/convert_to_star.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_to_star.slurm"
 # convert_to_star.slurm uses COORDS_ANGPIX for STAR coordinates and reads each
 # PyTOM XML's Origin MRC voxel size to derive convert.py's --binPyTom factor.
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/convert_pytom_to_warp.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_pytom_to_warp.slurm"
 
 # Phase 7: Export subtomograms
 # All variables are in pipeline.conf + species.conf — no per-script editing needed.
 # Verify in species.conf: TM_LABEL, SUBTOMO_BOX_SIZE, DIAMETER, OUTPUT_ANGPIX
 # Verify in pipeline.conf: COORDS_ANGPIX matches the converted STAR coordinates.
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_export_particles.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_particles.slurm"
 
 # Phase 8: OPUS-ET training (sub-phases: 8a mask → 8b grad → 8c fixed)
 # All variables are in pipeline.conf + species.conf — no per-script editing needed.
@@ -120,10 +123,10 @@ sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/warp_export_particles.slurm
 # Verify in pipeline.conf: NUM_GPUS
 # For fixed-mode (Phase 8c): run dsdsh convert_star --subset-label 1 on the Phase 7 STAR first.
 # Phase 8b auto-creates a fallback sphere mask if TRAINING_MASK_MRC is missing.
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/gen_training_mask.slurm  # Phase 8a — optional explicit mask
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/train_opuset.slurm        # Phase 8b — heterogeneity
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/train_opuset_fixed.slurm   # Phase 8c — fixed half-maps
-sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/prepare_m_halfmaps.slurm    # Phase 8d — link half-maps + mask
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_training_mask.slurm"  # Phase 8a — optional explicit mask
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset.slurm"        # Phase 8b — heterogeneity
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset_fixed.slurm"   # Phase 8c — fixed half-maps
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/prepare_m_halfmaps.slurm"    # Phase 8d — link half-maps + mask
 ```
 
 **For detailed per-phase commands:** read `references/phases.md`

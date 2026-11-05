@@ -116,11 +116,15 @@ if [ "$USE_REFINED_POSES" = "1" ] && [ -f "$REFINED_POSE_PKL" ]; then
     REFINED_STAR="$RESDIR/$(basename "${PARTICLES_STAR%.star}")_refined.star"
     echo "== Step 0: inject OPUS-ET-refined poses =="
     echo "  $REFINED_POSE_PKL  (-D $CFG_D --Apix $CFG_APIX)  ->  $REFINED_STAR"
+    # A failed converter must not reuse a refined STAR from an earlier epoch.
+    rm -f "$REFINED_STAR" || exit 1
     if dsd parse_pose_star "$PARTICLES_STAR" -D "$CFG_D" --Apix "$CFG_APIX" \
-           --poses "$REFINED_POSE_PKL" --out-star "$REFINED_STAR" && [ -f "$REFINED_STAR" ]; then
+           --poses "$REFINED_POSE_PKL" --outstar "$REFINED_STAR" && [ -s "$REFINED_STAR" ]; then
         SPLIT_INPUT="$REFINED_STAR"
     else
-        echo "WARNING: refined-pose injection failed; falling back to original poses."
+        echo "ERROR: refined-pose injection failed; refusing to select using original poses."
+        echo "Fix the conversion, or explicitly set USE_REFINED_POSES=0 to use original poses."
+        exit 1
     fi
 else
     echo "Refined poses: none injected (USE_REFINED_POSES=$USE_REFINED_POSES, pkl present: $([ -f "$REFINED_POSE_PKL" ] && echo yes || echo no))."

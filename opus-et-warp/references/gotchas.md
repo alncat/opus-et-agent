@@ -64,7 +64,7 @@ requires `--gres` in every script that calls a GPU tool.
 ### OutOfMemoryException
 - Use 256 GB+ RAM in SLURM jobs
 - Reduce `--perdevice` to 1
-- All scripts include `ulimit -v unlimited`
+- Use `ulimit -v unlimited` in scripts running memory-intensive tools; check the actual script.
 
 ---
 
@@ -203,7 +203,7 @@ torchrun ... --split deep.pkl -o opuset/ribo/z8
 head -1 warp_tiltseries/tiltstack/TS_XXX/TS_XXX.tlt  # max angle (e.g., 54)
 head -3 warp_tiltseries/tiltstack/TS_XXX/TS_XXX.tlt  # first 3 to compute step
 ```
-Default in scripts: `TILT_RANGE=50`, `TILT_STEP=2` — always verify from actual `.tlt` files.
+Blank `TILT_RANGE` / `TILT_STEP` are auto-detected from `.tlt` files; verify them before training.
 
 ### Fixed-mode reuses a stale pose pkl / deep_split for a changed selection
 - **Symptom**: all torchrun ranks exit 1 with `PoseTracker.load` asserting `Input rotations have shape (Nold,3,3) but expected (Nnew,3,3)`. The `.out` shows only `FAILED (exit code 1)` with **no traceback**

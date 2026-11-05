@@ -314,6 +314,21 @@ def test_build_gates_marks_a_gate_without_a_checkpoint_as_unapproved():
     assert gates["state_selection"]["approved"] is False
 
 
+def test_latest_gate_decision_and_waiting_gate_match_conductor():
+    rs = sources._run_state
+    state = rs.new_state('/run')
+    rs.record_checkpoint(state, 'picks_qc', 'approved', phase='7')
+    rs.open_checkpoint(state, 'picks_qc', '7')
+    p = poller_mod.Poller({'run_state': lambda: state}, {'run_state': 10.0})
+    p.refresh_due()
+    body = status_server.build_status(p.snapshot())
+    gates = {g['gate']: g for g in body['gates']}
+    assert {'setup', 'tm_params'} <= gates.keys()
+    assert not gates['picks_qc']['approved']
+    assert any('Gate 2' in item['text'] for item in body['attention'])
+    assert not any('Gate 0' in item['text'] for item in body['attention'])
+
+
 def test_status_surfaces_a_phase_parked_at_a_checkpoint():
     p = poller_mod.Poller(
         {"run_state": lambda: {"phases": {"6": {"status": "checkpoint"}},

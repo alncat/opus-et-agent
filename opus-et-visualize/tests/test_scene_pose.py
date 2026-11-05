@@ -2,15 +2,27 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
+import starfile
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import gen_artiax_scene as gs
 
 
+def write_star(path, origins=None):
+    row = {c: 0.0 for c in gs.COORD_COLS + gs.ANGLE_COLS}
+    row.update(origins or {})
+    starfile.write(pd.DataFrame([row]), path, overwrite=True)
+
+
 def test_euler_identity_is_identity():
     m = gs.euler_to_matrix(0.0, 0.0, 0.0)
     assert np.allclose(m, np.eye(3))
+
+
+def test_twenty_state_gallery_has_distinct_colors():
+    assert len(set(gs.STATE_PALETTE[:20])) == 20
 
 
 def test_euler_matrix_is_orthonormal():
@@ -27,7 +39,7 @@ def test_euler_tilt_90_maps_z_axis():
 
 def test_emit_cxc_contains_key_commands(tmp_path):
     star = tmp_path / "state0.star"
-    star.write_text("dummy")
+    write_star(star)
     out = tmp_path / "scene.cxc"
     text = gs.emit_cxc(
         tomogram="tomo.mrc", map_path="ref.mrc",
@@ -49,7 +61,7 @@ def test_emit_cxc_contains_key_commands(tmp_path):
 
 def test_emit_cxc_multistate_ids_and_movie(tmp_path):
     s1, s2 = tmp_path / "k1.star", tmp_path / "k2.star"
-    s1.write_text("a"); s2.write_text("b")
+    write_star(s1); write_star(s2)
     out = tmp_path / "scene.cxc"
     text = gs.emit_cxc(
         tomogram="t.mrc", map_path="m.mrc",
@@ -75,7 +87,7 @@ def test_emit_cxc_multistate_ids_and_movie(tmp_path):
 def test_emit_cxc_per_species_maps_and_contours(tmp_path):
     """Two species in one scene: each particle list gets its OWN map + contour."""
     ribo, fas = tmp_path / "ribo.star", tmp_path / "fas.star"
-    ribo.write_text("r"); fas.write_text("f")
+    write_star(ribo); write_star(fas)
     out = tmp_path / "insitu.cxc"
     text = gs.emit_cxc(
         tomogram="ts.mrc", map_path=None,
@@ -97,12 +109,12 @@ def test_emit_cxc_per_species_maps_and_contours(tmp_path):
 def test_emit_cxc_hero_aesthetic_opts(tmp_path):
     """Opt-in shadows/silhouettes/still/rock/step produce the finale hero look."""
     ribo, fas = tmp_path / "r.star", tmp_path / "f.star"
-    ribo.write_text("r"); fas.write_text("f")
+    write_star(ribo); write_star(fas)
     text = gs.emit_cxc(
         tomogram="ts.mrc", map_path=None,
         state_stars={0: str(ribo), 1: str(fas)}, out_cxc=tmp_path / "h.cxc",
         state_maps={0: "ribo.mrc", 1: "fas.mrc"}, state_contours={0: 0.01, 1: 0.007},
-        tilt_x=-55, shadows=True, silhouettes=True,
+        coords_angpix=4.2, tilt_x=-55, shadows=True, silhouettes=True,
         still_out=str(tmp_path / "hero.png"),
         movie_out=str(tmp_path / "rock.mp4"), movie_rock=30, movie_step=2,
     )
@@ -118,10 +130,37 @@ def test_emit_cxc_hero_aesthetic_opts(tmp_path):
 
 def test_emit_cxc_defaults_unchanged_360(tmp_path):
     """With no aesthetic opts, the movie is still the plain 360 turntable."""
-    s = tmp_path / "s.star"; s.write_text("s")
+    s = tmp_path / "s.star"; write_star(s)
     text = gs.emit_cxc(tomogram="t.mrc", map_path="m.mrc", state_stars={0: str(s)},
-                       out_cxc=tmp_path / "d.cxc", movie_out=str(tmp_path / "s.mp4"))
+                       out_cxc=tmp_path / "d.cxc", coords_angpix=4.2, movie_out=str(tmp_path / "s.mp4"))
     assert "turn y 2 180" in text
     assert "lighting shadows" not in text and "graphics silhouettes" not in text
     # the shared map_path=None must NOT leak into any open command
     assert "open None" not in text
+
+
+@pytest.mark.parametrize('unit,scale', [('', 2.1), ('Angst', 1.0)])
+def test_emit_origin_scale_respects_star_units(tmp_path, unit, scale):
+    star = tmp_path / 'refined.star'
+    write_star(star, {f'rlnOrigin{axis}{unit}': 2.0 for axis in 'XYZ'})
+    text = gs.emit_cxc('t.mrc', 'm.mrc', {0: star}, tmp_path / 's.cxc',
+                       coords_angpix=4.2, origin_angpix=2.1)
+    assert f'originScaleFactor 4.2 transScaleFactor {scale}' in text
+
+
+def test_emit_requires_explicit_coordinate_pixel_size(tmp_path):
+    with pytest.raises(ValueError, match='coords_angpix'):
+        gs.emit_cxc('t.mrc', 'm.mrc', {}, tmp_path / 's.cxc')
+
+
+def test_emit_rejects_missing_map_instead_of_opening_none(tmp_path):
+    with pytest.raises(ValueError, match='no map supplied'):
+        gs.emit_cxc('t.mrc', None, {0: 'unused.star'}, tmp_path / 's.cxc', coords_angpix=4.2)
+
+
+def test_emit_refuses_overlay_of_different_tomograms(tmp_path):
+    a, b = tmp_path / 'a.star', tmp_path / 'b.star'
+    write_star(a, {'rlnMicrographName': 'TS_1.tomostar'})
+    write_star(b, {'rlnMicrographName': 'TS_2.tomostar'})
+    with pytest.raises(ValueError, match='one tomogram'):
+        gs.emit_cxc('t.mrc', 'm.mrc', {0: a, 1: b}, tmp_path / 's.cxc', coords_angpix=4.2)

@@ -55,3 +55,20 @@ def test_write_relion_star_filters_by_state(tmp_path):
     back = starfile.read(out)
     back = back if isinstance(back, pd.DataFrame) else list(back.values())[0]
     assert len(back) == 2  # two particles with state 0
+
+
+@pytest.mark.parametrize('angstrom', [False, True])
+def test_refined_origins_survive_export_and_transform_in_angstroms(tmp_path, angstrom):
+    _, df = _make_star(tmp_path)
+    for axis in 'XYZ':
+        df['rlnOrigin' + axis + ('Angst' if angstrom else '')] = 2.0
+    out = tmp_path / 'refined.star'
+    gs.write_relion_star(df, out)
+    restored = gs.read_particles(out)
+    col = 'rlnOriginX' + ('Angst' if angstrom else '')
+    assert restored[col].iloc[0] == 2.0
+    reconciled = gs.reconcile_coords(restored, coords_angpix=4.2, tomo_angpix=8.4,
+                                    origin_angpix=2.1)
+    transform = gs.particle_transform(reconciled.iloc[0], tomo_angpix=8.4)
+    shift = 2.0 if angstrom else 4.2
+    assert np.allclose(transform[:, 3], np.array([10, 40, 70]) * 4.2 - shift)

@@ -1,11 +1,11 @@
 ---
 name: opus-et-status
-description: Use when the user asks what is running or failed on the cluster, whether a SLURM job finished, which phase or human gate the pipeline is at, to read a failed job's log, to browse QC images, to compare tilt series by CTF fit, dose or alignment, to see template-matching score distributions, or to change a tuning knob in species.conf without editing it by hand. Polls the cluster over SSH from the local machine.
+description: "Use when the user asks what is running or failed on the cluster, whether a SLURM job finished, which phase or human gate the pipeline is at, to read a failed job's log, to browse QC images, to compare tilt series by CTF fit, dose or alignment, to see template-matching score distributions, or to change a tuning knob in species.conf without editing it by hand. Polls the cluster over SSH from the local machine."
 ---
 
 # OPUS-ET Status Server
 
-A dependency-free (stdlib-only) web dashboard that polls the cluster over SSH
+A stdlib-only web dashboard (install beside `opus-et-conductor`) that polls the cluster over SSH
 and shows SLURM job state, pipeline phase progress, gate status, failure log
 tails, and a narrow typed config editor.
 
@@ -18,7 +18,9 @@ python3 opus-et-status/scripts/status_server.py \
     --port 8080
 ```
 
-Then open <http://127.0.0.1:8080>.
+Then open <http://127.0.0.1:8080>. This runs in the foreground; stop with Ctrl-C.
+Optional QC thumbnails use local Pillow. On-demand rendering additionally needs
+the remote scripts and scientific Python packages listed in `references/panels.md`.
 
 - `--host` is an SSH host or alias that already works non-interactively
   (`ssh <CLUSTER_HOST> true` must succeed without a password prompt; the client
@@ -38,8 +40,9 @@ Then open <http://127.0.0.1:8080>.
   different `--port`; the header names the host and run directory each one
   watches.
 - Default `--bind` is `127.0.0.1`. There is **no authentication**. To view it
-  on the lab network, pass `--bind <LAN-IP>` (not `0.0.0.0`); Origin checks
-  then allow that IP as well as loopback.
+  from another machine, keep loopback binding and use an SSH tunnel to the
+  dashboard host (`ssh -L 8080:127.0.0.1:8080 <dashboard-host>`). A LAN bind
+  exposes configuration writes and rendering to anyone who can reach it.
 
 ## What it shows
 Nine tabs in pipeline order -- Run, Frames, Dataset, Visual QC, Training, Inventory, Refinement, Config, Runs -- each reading what the pipeline already wrote; the source and refresh interval of every panel, and what each column means. Full text: `references/panels.md`.
@@ -75,7 +78,7 @@ run: a new conf is sourced by nothing.
 
 Only the keys in [references/config_keys.md](references/config_keys.md) are
 editable. Each key declares its file: species keys go to the conf chosen by
-`--species-conf`, processing keys go to `pipeline.conf` (what each file holds is defined once, in
+the active species tab (`--species-conf` sets the initial tab), processing keys go to `pipeline.conf` (what each file holds is defined once, in
 `opus-et-warp/references/configuration.md`). Acquisition facts
 (`ANGPIX`, `EXPOSURE`, dims) and all paths are **read-only** — they describe the
 data, so changing them would invalidate work already done rather than

@@ -13,6 +13,50 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 STATE_FILENAME = ".opus_run_state.json"
 
+GATES = [
+    ('setup', 'Gate 0 - setup'),
+    ('alignment_qc', 'Gate 1 - alignment QC'),
+    ('tm_params', 'TM parameter selection'),
+    ('picks_qc', 'Gate 2 - picks QC'),
+    ('state_selection', 'Gate 3 - state selection'),
+    ('refine', 'Gate 4 - resolution sign-off'),
+]
+
+
+def phase_job_ids(entry):
+    """Canonical list, with compatibility for previously documented job keys."""
+    values = entry.get('job_ids', entry.get('jobs', entry.get('job_id', [])))
+    if values is None:
+        return []
+    if isinstance(values, (str, int)):
+        values = [values]
+    return [str(v) for v in values]
+
+
+def gate_approved(state, gate):
+    # Old protocols omitted decision; retain those recorded approvals. New
+    # records always carry a decision, and the latest record supersedes earlier ones.
+    records = [c for c in state.get('checkpoints', [])
+               if isinstance(c, dict) and c.get('gate') == gate]
+    return bool(records) and records[-1].get('decision', 'approved') == 'approved'
+
+
+def record_checkpoint(state, gate, decision, phase=None, **evidence):
+    """Record an explicit human decision; caller saves state with save_state."""
+    if gate not in dict(GATES) or decision not in ('approved', 'rejected', 'pending'):
+        raise ValueError('unknown gate or checkpoint decision')
+    record = dict(evidence, gate=gate, decision=decision)
+    if phase is not None:
+        record['phase'] = str(phase)
+        set_phase(state, phase, 'ready' if decision == 'approved' else 'checkpoint', gate=gate)
+    state.setdefault('checkpoints', []).append(record)
+    return state
+
+
+def open_checkpoint(state, gate, phase):
+    """Park the next phase at a gate without implying scientific approval."""
+    return record_checkpoint(state, gate, 'pending', phase=phase)
+
 PHASE_STATUSES = {
     "pending", "ready", "running", "verifying",
     "checkpoint", "done", "failed", "skipped",
@@ -74,6 +118,12 @@ def set_phase(state, phase, status, **fields):
     if status not in PHASE_STATUSES:
         raise ValueError(f"unknown phase status: {status!r}")
     entry = state["phases"].setdefault(str(phase), {})
+    if any(k in fields for k in ('job_ids', 'jobs', 'job_id')):
+        ids = phase_job_ids(fields)
+        for key in ('jobs', 'job_id'):
+            fields.pop(key, None)
+            entry.pop(key, None)
+        fields['job_ids'] = ids
     entry["status"] = status
     entry.update(fields)
     return state
@@ -121,13 +171,15 @@ def parse_squeue_ids(squeue_stdout):
     return ids
 
 
-def reconcile_jobs(state, active_ids):
+def reconcile_jobs(state, active_ids, query_succeeded=True):
     """A running phase whose jobs are all gone from SLURM needs verification."""
+    if not query_succeeded or active_ids is None:
+        return state
     active = {str(a) for a in active_ids}
     for entry in state["phases"].values():
         if entry.get("status") != "running":
             continue
-        job_ids = [str(j) for j in entry.get("job_ids", [])]
+        job_ids = phase_job_ids(entry)
         if job_ids and not any(j in active for j in job_ids):
             entry["status"] = "verifying"
     return state

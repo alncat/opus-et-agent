@@ -94,7 +94,7 @@ def test_output_angpix_must_not_be_finer_than_raw_angpix():
 
 
 class FakeClient:
-    def __init__(self, files, validate_rc=0, validate_out="", listing=None):
+    def __init__(self, files, validate_rc=0, validate_out='{"errors": 0, "checks": []}', listing=None):
         self.files = dict(files)
         self.validate_rc = validate_rc
         self.validate_out = validate_out
@@ -147,6 +147,46 @@ def test_apply_rolls_back_when_validate_fails():
         _editor(c).apply("ZDIM", "16")
     assert "box smaller than particle" in str(exc.value)
     assert c.files["/run/species.conf"] == CONF          # restored
+
+
+def test_validation_timeout_restores_original_config():
+    class TimeoutClient(FakeClient):
+        def run(self, argv, **kw):
+            assert kw['timeout'] == 180
+            raise TimeoutError('validation timed out')
+    c = TimeoutClient({'/run/species.conf': CONF, '/run/pipeline.conf': 'ANGPIX=3.37\n'})
+    with pytest.raises(ce.ValidationError, match='rolled back'):
+        _editor(c).apply('ZDIM', '16')
+    assert c.files['/run/species.conf'] == CONF
+
+
+def test_create_species_timeout_removes_unvalidated_file():
+    class TimeoutClient(FakeClient):
+        def run(self, argv, **kw):
+            if argv[:1] == ['bash']:
+                assert kw['timeout'] == 180
+                raise TimeoutError('validation timed out')
+            return super().run(argv, **kw)
+    c = TimeoutClient({'/run/species.conf': CONF, '/run/pipeline.conf': 'ANGPIX=3.37\n'})
+    with pytest.raises(ce.ValidationError, match='removed'):
+        _editor(c).create_species('new')
+    assert '/run/species_new.conf' not in c.files
+
+
+@pytest.mark.parametrize('output', ['', 'not JSON', '{}', '{"errors":1,"checks":[]}'])
+def test_success_exit_without_valid_validation_result_rolls_back(output):
+    c = FakeClient({'/run/species.conf': CONF, '/run/pipeline.conf': 'ANGPIX=3.37\n'},
+                   validate_out=output)
+    with pytest.raises(ce.ValidationError, match='rolled back'):
+        _editor(c).apply('ZDIM', '16')
+    assert c.files['/run/species.conf'] == CONF
+
+
+@pytest.mark.parametrize('key,value', [('MASK_SIGMA', 5), ('TM_BOX_SIZE', 24), ('MASK_RADIUS', 14)])
+def test_mask_constraints_hold_when_editing_either_side(key, value):
+    with pytest.raises(ce.ValidationError):
+        ce.cross_key_check(key, value, {}, {'TM_BOX_SIZE': 32, 'MASK_RADIUS': 11,
+                                           'MASK_SIGMA': 1, 'EXTRACT_MASK_RADIUS': 14})
 
 
 def test_current_values_returns_only_allowlisted_keys_present_in_file():

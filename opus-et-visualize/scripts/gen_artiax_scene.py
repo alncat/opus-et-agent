@@ -9,6 +9,7 @@ ChimeraX 1.10 (see emit_cxc's docstring); renders run locally on the Mac, not on
 the cluster (spec §7.1, §11).
 """
 from pathlib import Path
+import colorsys
 
 import numpy as np
 import pandas as pd
@@ -28,12 +29,23 @@ def read_particles(star_path):
     raise ValueError(f"no particle block with rlnCoordinateX in {star_path}")
 
 
-def reconcile_coords(df, coords_angpix, tomo_angpix):
+def reconcile_coords(df, coords_angpix, tomo_angpix, origin_angpix=None):
+    """Physical refined centres; RELION origins are subtracted from coordinates.
+
+    Pixel-valued origins use origin_angpix (defaults to coords_angpix). Origins
+    already in Angstroms must not be multiplied by a pixel size again.
+    """
     df = df.copy()
-    ratio = coords_angpix / tomo_angpix
+    origin_angpix = coords_angpix if origin_angpix is None else origin_angpix
+    for value in (coords_angpix, tomo_angpix, origin_angpix):
+        if not np.isfinite(value) or value <= 0:
+            raise ValueError('pixel sizes must be positive and finite')
     for axis in ("X", "Y", "Z"):
-        df[f"voxel{axis}"] = df[f"rlnCoordinate{axis}"] * ratio
-        df[f"angstrom{axis}"] = df[f"rlnCoordinate{axis}"] * coords_angpix
+        pixel_key, angstrom_key = f'rlnOrigin{axis}', f'rlnOrigin{axis}Angst'
+        shift = (df[pixel_key] * origin_angpix if pixel_key in df else
+                 df[angstrom_key] if angstrom_key in df else 0.0)
+        df[f"angstrom{axis}"] = df[f"rlnCoordinate{axis}"] * coords_angpix - shift
+        df[f"voxel{axis}"] = df[f"angstrom{axis}"] / tomo_angpix
     return df
 
 
@@ -47,14 +59,16 @@ def attach_labels(df, labels):
 
 def write_relion_star(df, out_path, state=None):
     subset = df if state is None else df[df["state"] == state]
-    keep = [c for c in (["rlnMicrographName"] + COORD_COLS + ANGLE_COLS)
+    origins = [f'rlnOrigin{axis}{unit}' for unit in ('', 'Angst') for axis in 'XYZ']
+    keep = [c for c in (["rlnMicrographName"] + COORD_COLS + ANGLE_COLS + origins)
             if c in subset.columns]
     starfile.write(subset[keep].reset_index(drop=True), out_path, overwrite=True)
     return out_path
 
 
-STATE_PALETTE = ["cornflower blue", "tomato", "gold", "medium sea green",
-                 "orchid", "turquoise", "sandy brown", "slate gray"]
+STATE_PALETTE = ['#' + ''.join(f'{round(c * 255):02x}' for c in
+                 colorsys.hsv_to_rgb((i * 0.61803398875) % 1.0, 0.65, 0.90))
+                 for i in range(20)]
 
 
 def euler_to_matrix(rot, tilt, psi):
@@ -70,17 +84,18 @@ def euler_to_matrix(rot, tilt, psi):
 
 
 def particle_transform(row, tomo_angpix):
+    """ChimeraX transform in Angstroms, from a reconcile_coords output row."""
     r = euler_to_matrix(row["rlnAngleRot"], row["rlnAngleTilt"], row["rlnAnglePsi"])
-    t = np.array([row["voxelX"], row["voxelY"], row["voxelZ"]]).reshape(3, 1)
+    t = np.array([row["voxelX"], row["voxelY"], row["voxelZ"]]).reshape(3, 1) * tomo_angpix
     return np.hstack([r, t])
 
 
 def emit_cxc(tomogram, map_path, state_stars, out_cxc, state_colors=None,
-             coords_angpix=1.0, contour_level=None, contour_sd=None,
+             coords_angpix=None, contour_level=None, contour_sd=None,
              tomo_transfer=None, tomo_color="light gray", bg_color="black",
              tilt_x=-30, movie_out=None, state_maps=None, state_contours=None,
              shadows=False, silhouettes=False, still_out=None,
-             movie_rock=None, movie_step=None):
+             movie_rock=None, movie_step=None, origin_angpix=None):
     """Emit a ChimeraX/ArtiaX scene placing `map_path` at every particle pose in
     each per-state RELION star, inside `tomogram`. Colored by conformational state.
 
@@ -93,6 +108,9 @@ def emit_cxc(tomogram, map_path, state_stars, out_cxc, state_colors=None,
         rescale coords to physical A and register the particles with the tomogram
         (the map itself is placed at true size from its own MRC ``voxel_size`` — no
         scaling needed there).
+      * RELION origins are retained. ``transScaleFactor`` is origin_angpix
+        for pixel-valued shifts, or 1.0 for Angstrom-valued shifts. Specify
+        origin_angpix when it differs from coords_angpix.
       * attach a map as each particle's surface with
         ``artiax attach #<map> toParticleList #<pl>`` (map must be a Volume).
       * style instances with ``color #<pl> <c>`` / ``artiax particles``.
@@ -131,9 +149,26 @@ def emit_cxc(tomogram, map_path, state_stars, out_cxc, state_colors=None,
         only), belong on the still not the movie.
     Defaults (all off / None) reproduce the original plain 360 turntable.
     """
+    if coords_angpix is None or not np.isfinite(coords_angpix) or coords_angpix <= 0:
+        raise ValueError('coords_angpix must explicitly specify the coordinate pixel size')
+    origin_angpix = coords_angpix if origin_angpix is None else origin_angpix
+    if not np.isfinite(origin_angpix) or origin_angpix <= 0:
+        raise ValueError('origin_angpix must be positive and finite')
     state_maps = state_maps or {}
     state_contours = state_contours or {}
     states = sorted(state_stars)
+    translation_scales = {}
+    tomogram_names = set()
+    for state in states:
+        if not state_maps.get(state, map_path):
+            raise ValueError(f'no map supplied for state {state}')
+        particles = read_particles(state_stars[state])
+        if 'rlnMicrographName' in particles:
+            tomogram_names.update(particles['rlnMicrographName'].dropna().unique())
+        translation_scales[state] = (origin_angpix if 'rlnOriginZ' in particles else
+                                     1.0 if 'rlnOriginZAngst' in particles else origin_angpix)
+    if len(tomogram_names) > 1:
+        raise ValueError('filter state STARs to one tomogram before emitting a scene')
     lines = ["# Auto-generated by gen_artiax_scene.py (opus-et-visualize) — ArtiaX 0.7.0",
              "artiax start"]
     if tomogram:
@@ -154,7 +189,7 @@ def emit_cxc(tomogram, map_path, state_stars, out_cxc, state_colors=None,
         color = (state_colors or {}).get(state, STATE_PALETTE[state % len(STATE_PALETTE)])
         lines += [
             f"# --- conformational state {state} ---",
-            f"artiax particles {pl} originScaleFactor {coords_angpix}",
+            f"artiax particles {pl} originScaleFactor {coords_angpix} transScaleFactor {translation_scales[state]}",
             f"artiax attach #{mid} toParticleList {pl}",
             f"artiax show {pl} surface",
             f"hide {pl}.3 models",                       # hide the auto marker set

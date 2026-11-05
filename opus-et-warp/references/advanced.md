@@ -1,5 +1,8 @@
 # Advanced Workflows
 
+Set the absolute exported `SKILL_DIR` and configure the run as described in
+`configuration.md` before using these commands.
+
 ---
 
 ## WARP Refinement with MTools
@@ -221,14 +224,14 @@ Five SLURM wrappers, mapped to the natural cardinality of each step:
 Typical order (with iteration):
 
 ```bash
-sbatch scripts/warp_export_particles.slurm    # initial particles
-sbatch scripts/warp_m_setup.slurm             # population + source (one-shot)
-sbatch scripts/warp_m_create_species.slurm    # add species A (repeat for B, C…)
-sbatch scripts/warp_m_refine.slurm            # pass 1 (mask = the one from create_species)
-sbatch scripts/warp_m_update_mask.slurm       # optional: re-tighten mask using pass-1 map
-sbatch scripts/warp_m_refine.slurm            # pass 2 with the updated mask
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_particles.slurm"    # initial particles
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_m_setup.slurm"             # population + source (one-shot)
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_m_create_species.slurm"    # add species A (repeat for B, C…)
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_m_refine.slurm"            # pass 1 (mask = the one from create_species)
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_m_update_mask.slurm"       # optional: re-tighten mask using pass-1 map
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_m_refine.slurm"            # pass 2 with the updated mask
 # (repeat refine ± update_mask until converged)
-sbatch scripts/warp_m_export.slurm            # re-export one converged species; repeat per species
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_m_export.slurm"            # re-export one converged species; repeat per species
 ```
 
 **Mask cadence.** The first refinement pass uses the mask supplied to
@@ -278,7 +281,7 @@ torchrun --nproc_per_node=4 -m cryodrgn.commands.train_tomo_dist \
     --templateres 128 \
     --tmp-prefix tmp \
     --datadir <warp_tiltseries> \
-    --angpix $ANGPIX \
+    --angpix "$OUTPUT_ANGPIX" \
     --downfrac 1. \
     --warp \
     --ctfalpha 0. \

@@ -129,19 +129,21 @@ Use the skill's `exclude_stars.py` to check overlap between two star files based
 python <skill-dir>/scripts/exclude_stars.py <reference.star> <query.star>
 ```
 
-Pixel size is auto-detected from `config.pkl` in the current directory.
+Pixel size comes from `config.pkl` in the current directory, or an explicit `--config` or `--angpix`. Missing or invalid sampling stops the command. Use `--distance` to change the default 136 Å threshold.
 
 Output:
-- Prints overlap statistics for each micrograph
+- Prints the total number of retained particles
 - Generates `<query>_exclude.star` with non-overlapping particles
 
 Example workflow to check overlap of all cluster star files with a test set:
 ```bash
 for f in kmeans_pose/pre*.star; do
     echo "=== Checking overlap for $f ==="
-    python <skill-dir>/scripts/exclude_stars.py test_set.star "$f"
+    python <skill-dir>/scripts/exclude_stars.py test_set.star "$f" --config config.pkl
 done
 ```
+
+`exclude_stars.py` requires `--angpix` or a readable training `--config` (default `config.pkl`); it never guesses sampling. `--distance` sets the exclusion radius in Å.
 
 ## Complete Workflow Example
 
@@ -158,6 +160,7 @@ dsdsh analyze . 39 10 20
 dsdsh eval_vol . 39 kmeans 20 <original_apix>
 
 # 3. Create star files for all clusters
+mkdir -p kmeans_pose
 dsd parse_pose_star <particles.star> -D <effective_box_size> --Apix <original_apix> \
     --labels analyze.39/kmeans20/labels.pkl --outdir kmeans_pose
 
@@ -210,7 +213,7 @@ dsdsh analyze . 39 10 30
 
 Output:
 - `analyze.39/` - Full conformation space (zdim-dimensional, e.g., 8-dim for the default ZDIM=8)
-- `defanalyze.39/` - Deformation parameter space (config-dependent dimensions, e.g., 4-dim for 2-body deformation)
+- `defanalyze.39/` - Deformation parameter space (config-dependent dimensions, width = configured `zaffinedim`, independent of body count)
 
 Both directories contain similar structures (`kmeans<numk>/`, `pc<N>/`, plots).
 
@@ -220,10 +223,12 @@ Generate volumes with rigid body deformation along principal components:
 
 ```bash
 # Step 1: Create template z-file from k-means cluster
-cat > template_z17.txt << 'EOF'
-2.718417 1.193066 1.568582 0.121429 0.286391 -4.490979 0.128237 0.110625 -0.278317 1.854208 -1.253814 0.234952
-0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-EOF
+python - <<'PYTHON'
+import pickle
+import numpy as np
+centers = pickle.load(open("analyze.39/kmeans30/centers.pkl", "rb"))
+np.savetxt("template_z17.txt", np.asarray(centers)[17].reshape(1, -1))
+PYTHON
 
 # Step 2: Generate deformation volumes
 dsd eval_vol --load weights.<epoch>.pkl \
@@ -247,7 +252,7 @@ dsd eval_vol --load weights.<epoch>.pkl \
 
 **Note on dimensions:** The template z-values and deformation z-values have different dimensions:
 - Template (from analyze): Matches `config['model_args']['zdim']` (check with `extract_config.py`)
-- Deformation (from defanalyze): Matches number of deformation parameters (typically num_bodies × 2 for rotation+translation)
+- Deformation (from defanalyze): Matches `zaffinedim` (the conformation/deformation latent width, CLI default 4), independent of body count
 
 ### 10. Create Template from K-means Cluster
 

@@ -1,6 +1,6 @@
 # =============================================================================
 # Pipeline Manifest — primary phase map for validate.sh and agents.
-# (validate.sh keeps a built-in fallback for the M sub-phases not enumerated here: 8d and Ma–Me.)
+# (validate.sh keeps a built-in fallback for the M sub-phases not enumerated here: Ma–Me.)
 # =============================================================================
 
 phases:
@@ -635,6 +635,26 @@ phases:
       - OPUSET_ENV
     outputs:
       - opuset/${TM_LABEL}/fixed_subset${FIXED_SUBSET_LABEL}/weights.*.pkl
+
+  8d:
+    description: "Prepare selected-particle half-maps and molecular mask for M"
+    requires_species: true
+    scripts:
+      - prepare_m_halfmaps.slurm
+    required_vars:
+      - WORK_DIR
+      - TM_LABEL
+    required_tools:
+      - dsdsh
+    required_conda:
+      - OPUSET_ENV
+    outputs:
+      - opuset/${TM_LABEL}/half1.mrc
+      - opuset/${TM_LABEL}/half2.mrc
+      - opuset/${TM_LABEL}/halfmap_mask.mrc
+    pre_checks:
+      - "Both selected-particle subset reconstructions have finished"
+      - "Verify the discovered tmp0.mrc pair belongs to the intended disjoint half-sets"
 
   "M":
     description: "MTools refinement — population, species, MCore, mask, export"

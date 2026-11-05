@@ -1,5 +1,8 @@
 # WARP/OPUS-ET Pipeline — Phase-by-Phase Commands
 
+Set the absolute exported `SKILL_DIR` and configure the run as described in
+`configuration.md` before using these commands.
+
 Detailed commands for each phase. Use variables defined in SKILL.md Quick Start.
 
 ---
@@ -51,7 +54,7 @@ WarpTools fs_ctf \
     --cs 2.7 \
     --grid 2x2x1 \
     --range_max $CTF_RANGE_MAX \
-    --defocus_max 8 \
+    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX" \
     --perdevice 1
 ```
 No gain reference — assumed already applied to the averaged image.
@@ -79,7 +82,7 @@ WarpTools fs_motion_and_ctf \
     --c_range_max $CTF_RANGE_MAX \
     --c_voltage $CTF_VOLTAGE \
     --c_cs 2.7 \
-    --c_defocus_max 8 \
+    --c_defocus_min "$CTF_DEFOCUS_MIN" --c_defocus_max "$CTF_DEFOCUS_MAX" \
     --c_use_sum \
     --out_averages \
     --out_average_halves \
@@ -111,7 +114,7 @@ WarpTools fs_motion_and_ctf \
     --c_range_max $CTF_RANGE_MAX \
     --c_voltage $CTF_VOLTAGE \
     --c_cs 2.7 \
-    --c_defocus_max 8 \
+    --c_defocus_min "$CTF_DEFOCUS_MIN" --c_defocus_max "$CTF_DEFOCUS_MAX" \
     --c_use_sum \
     --out_averages \
     --out_average_halves \
@@ -132,7 +135,7 @@ a bound; see gotchas.md.
 
 `create_settings` accepts a single `--extension` pattern. If a session mixes EER and MRC (or different gain references), split into separate frame-series subdirectories and run Phase 1 once per subset, then merge tomostar listings in Phase 2.
 
-**SLURM:** `sbatch scripts/warp_frameseries_import.slurm` — the template covers Option A/B; for EER (Option C) or custom gain flags, add the extra flags in its CONFIGURATION section.
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_frameseries_import.slurm"` — the template covers Option A/B; for EER (Option C) or custom gain flags, add the extra flags in its CONFIGURATION section.
 
 ---
 
@@ -150,7 +153,7 @@ WarpTools ts_import \
 # 2. Create tilt series settings using raw sampling and binning from
 #    warp_frameseries.settings (the stock script reads these automatically).
 #    For example, this project used 1.1845 A raw and --bin 1.
-read -r TS_RAW_ANGPIX TS_BIN < <(python scripts/warp_settings.py sampling warp_frameseries.settings)
+read -r TS_RAW_ANGPIX TS_BIN < <(python "$SKILL_DIR/scripts/warp_settings.py" sampling warp_frameseries.settings)
 WarpTools create_settings \
     --folder_data tomostar \
     --folder_processing warp_tiltseries \
@@ -162,7 +165,7 @@ WarpTools create_settings \
     --output warp_tiltseries.settings
 ```
 
-**SLURM:** `sbatch scripts/warp_tiltseries_setup.slurm`
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_tiltseries_setup.slurm"`
 
 **Note:** `create_settings` only writes a config file pointing to the tomostar directory — it does not require the tomostar files to exist yet. The SLURM script runs `create_settings` first, then `ts_import`.
 
@@ -179,14 +182,14 @@ WarpTools ts_stack \
     --angpix $ALIGN_ANGPIX \
     --perdevice 1
 ```
-**SLURM:** `sbatch scripts/warp_export_stacks.slurm`
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_stacks.slurm"`
 
 ### AreTomo2 — Angle Negation Method (recommended)
 
 WARP writes angles +max → -min (e.g. +54…-54); AreTomo expects -max → +min (e.g. -54…+54). The negation script handles this automatically:
 
 ```bash
-sbatch scripts/warp_aretomo_align_negate.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_aretomo_align_negate.slurm"
 ```
 
 What it does:
@@ -203,7 +206,7 @@ AreTomo2 \
     -OutBin 1 \
     -AngFile TS_026_neg.rawtlt \
     -OutImod 2 \
-    -VolZ $BINNED_Z \
+    -VolZ $VOL_Z \
     -Gpu 0 \
     -AlignZ $ALIGN_Z \
     -FlipVol 1 \
@@ -220,7 +223,7 @@ on the 20260907 data neighbouring tilts were up to 860 px apart and were
 aligned correctly.
 
 ```bash
-sbatch scripts/warp_alignment_qc.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_alignment_qc.slurm"
 ```
 
 For every active tilt series, `alignment_qc.py` applies `TS.xf` (IMOD
@@ -280,7 +283,7 @@ and a 1440 × 1024 × 250 volume at 9.476 Å, the raw
 dimensions are 11520 × 8192 × 2000. WARP and AreTomo may differ by one
 volume voxel because of rounding; validation allows that tolerance.
 
-**SLURM:** `sbatch scripts/warp_update_tomo_dims.slurm`. This edits only the
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_update_tomo_dims.slurm"`. This edits only the
 three `Dimensions` values and saves the prior settings as
 `warp_tiltseries.settings.before_update` (or `.before_update.1`, etc., if a
 backup already exists). It rejects inconsistent frame/tilt sampling.
@@ -299,7 +302,7 @@ WarpTools ts_import_alignments \
     --alignments warp_tiltseries/tiltstack/ \
     --alignment_angpix $ALIGN_ANGPIX
 ```
-**SLURM:** `sbatch scripts/warp_import_alignments.slurm`
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_import_alignments.slurm"`
 
 **Critical:** Use the exact same pixel size as the AreTomo stack export. The `.xf` and `.tlt` files are in stack-pixel units. Use the configured `ALIGN_ANGPIX` in stack export, alignment import, and reconstruction. `ANGPIX` must be the raw detector sampling recorded in the frame settings, and `ALIGN_ANGPIX = ANGPIX × BINNING_FACTOR`. The scripts check that the alignment pixel is a whole-number multiple of the frame-series working pixel (`PixelSize × 2^BinTimes`). AreTomo `_ali.mrc` voxel size may be larger than the stack/alignment pixel size after explicit `-OutBin` greater than 1 or later resampling.
 
@@ -327,7 +330,7 @@ WarpTools ts_ctf \
     --cs 2.7 \
     --window 512 \
     --range_high 7 \
-    --defocus_max 8 \
+    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX" \
     --perdevice 1
 
 # Step 3: Reconstruct tomograms (32-bit float)
@@ -348,7 +351,7 @@ the raw 0° tilt, the AreTomo projection and the template-matching volume all
 showed the full field. Only comparing the images revealed it.
 
 ```bash
-sbatch scripts/warp_geometry_qc.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_geometry_qc.slurm"
 ```
 
 For every active tilt series, `geometry_qc.py` puts the raw 0° tilt average,
@@ -380,9 +383,9 @@ exits non-zero if any tilt series fails. If one does:
 
 **SLURM (step-by-step):**
 ```bash
-sbatch scripts/warp_ts_ctf.slurm         # Steps 1+2: handedness + CTF
-sbatch scripts/warp_ts_reconstruct.slurm # Step 3: reconstruction
-sbatch scripts/warp_geometry_qc.slurm    # Phase 5c: image geometry QC
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_ctf.slurm"         # Steps 1+2: handedness + CTF
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_ts_reconstruct.slurm" # Step 3: reconstruction
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_geometry_qc.slurm"    # Phase 5c: image geometry QC
 ```
 
 ### End-to-end pixel-size audit
@@ -422,30 +425,30 @@ If the template's spacing ≠ `ALIGN_ANGPIX`, **stop and resample the template**
 
 ```bash
 # 1. Generate sphere mask from template
-sbatch scripts/gen_sphere_mask.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_sphere_mask.slurm"
 # → ribo_mask.mrc  (naming: <TM_LABEL>_mask.mrc)
 
 # 2. Generate PyTom job XMLs (uses tomostar as canonical tilt series list)
-sbatch scripts/gen_tm_jobs_aretomo.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_tm_jobs_aretomo.slurm"
 # → template_matching/jobs/TS_XXX_*/job.xml
 
 # 3. Run template matching (sequential to avoid GPU OOM)
-sbatch scripts/run_tm_sequential.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/run_tm_sequential.slurm"
 # → scores_*.em, angles_*.em per job directory
 
 # 4. Extract particle candidates (parallel)
-sbatch scripts/extract_tm_candidates_parallel.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/extract_tm_candidates_parallel.slurm"
 # → particles/TS_XXX_particles.xml
 
 # 5. Convert PyTom XML → per-tilt-series STAR (canonical SLURM path)
-sbatch scripts/convert_to_star.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_to_star.slurm"
 # Uses PyTom convert.py per file. --pixelSize is COORDS_ANGPIX;
 # --binPyTom is derived from the Origin MRC voxel size / COORDS_ANGPIX.
 # This remains correct if TM volumes were rebinned after AreTomo alignment.
 # Do not use a combined particles.star here.
 
 # 6. Convert STAR → WARP format
-sbatch scripts/convert_pytom_to_warp.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/convert_pytom_to_warp.slurm"
 # → warp_star/*_warp.star
 
 # Optional interactive shortcut:
@@ -478,7 +481,7 @@ WarpTools ts_export_particles \
 # with dsd parse_pose_star. Do not run dsdsh prepare unless doing a custom,
 # manual training setup.
 ```
-**SLURM:** `sbatch scripts/warp_export_particles.slurm`
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_particles.slurm"`
 
 `OUTPUT_ANGPIX` is the chosen exported subtomogram pixel size and is often binned for training. `COORDS_ANGPIX` is the coordinate pixel size in the input STAR, usually unbinned `ANGPIX` after the PyTom→WARP conversion.
 
@@ -506,7 +509,7 @@ git checkout alncat
 
 ```bash
 # Optional: generate training mask
-sbatch scripts/gen_training_mask.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_training_mask.slurm"
 # → ribo_training_mask.mrc  (naming: <TM_LABEL>_training_mask.mrc)
 
 # Check tilt angles before training
@@ -516,7 +519,7 @@ head -3 warp_tiltseries/tiltstack/TS_XXX/TS_XXX.tlt  # step size
 
 ### Option A: Heterogeneity analysis (train_tomo_dist)
 ```bash
-sbatch scripts/train_opuset.slurm
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset.slurm"
 # Key params: ZDIM, ZAFFINEDIM, NUM_EPOCHS, OUTPUT_DIR, TILT_RANGE, TILT_STEP
 ```
 
@@ -527,7 +530,7 @@ dsdsh analyze $OUTPUT_DIR $((NUM_EPOCHS-1)) 10 20
 
 ### Option B: Subtomogram averaging (encode-mode fixed)
 For homogeneous averaging — uses `--encode-mode fixed` to set z=0 for all particles.
-**SLURM:** `sbatch scripts/train_opuset_fixed.slurm`. See `references/advanced.md`
+**SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset_fixed.slurm"`. See `references/advanced.md`
 for full command and parameters.
 
 **Generating half maps for M refinement.** Split the Phase 7 STAR by

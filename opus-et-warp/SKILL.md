@@ -1,6 +1,6 @@
 ---
 name: warp-opus-et
-description: Use when the user is processing cryo-ET data with WARP, AreTomo2, PyTOM or OPUS-ET: importing frame or tilt series from MDOCs, CTF estimation, tilt-series alignment, template matching, exporting subtomograms, M refinement, or training an OPUS-ET heterogeneity model. Also use on mentions of tomostar files, WarpTools, .st/.rawtlt stacks, defocus handedness, ts_export_particles, pipeline.conf or species.conf, or SLURM jobs for GPU tomography.
+description: "Use when the user is processing cryo-ET data with WARP, AreTomo2, PyTOM or OPUS-ET: importing frame or tilt series from MDOCs, CTF estimation, tilt-series alignment, template matching, exporting subtomograms, M refinement, or training an OPUS-ET heterogeneity model. Also use on mentions of tomostar files, WarpTools, .st/.rawtlt stacks, defocus handedness, ts_export_particles, pipeline.conf or species.conf, or SLURM jobs for GPU tomography."
 ---
 
 # WARP/OPUS-ET Cryo-ET Processing Workflow
@@ -20,7 +20,7 @@ description: Use when the user is processing cryo-ET data with WARP, AreTomo2, P
 Collect the acquisition, tilt-series, template-matching, training, environment and M parameters before generating any command -- no placeholders. Frame type is detected from the file extension and MRC Z-dimension, not from names or MDOC counts. Full text: `references/settings.md`.
 
 ## Quick Start
-Fill `pipeline.conf` + `species.conf`, run `validate.sh`, then submit each phase with `sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/<script>`; Phase 3.5 (TOMO_DIMS from AreTomo) is required, and the AreTomo/WARP dimension check between phases 3-5 is the one sanity check not to skip. Full text: `references/quickstart.md`.
+Fill `pipeline.conf` + `species.conf`, run `"$SKILL_DIR/validate.sh"`, then submit each phase with `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/<script>"`; Phase 3.5 (TOMO_DIMS from AreTomo) is required, and the AreTomo/WARP dimension check between phases 3-5 is the one sanity check not to skip. Full text: `references/quickstart.md`; the complete sequence is in `references/workflow.md`.
 
 ## Phase Summary
 

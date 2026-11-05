@@ -1669,12 +1669,7 @@ tick(); loadCfg(); loadQc(); setInterval(tick,5000);
 
 # A gate is approved exactly when a checkpoints[] entry records its decision,
 # so an absent entry means it is still waiting on the human.
-GATES = [
-    ("alignment_qc", "Gate 1 - alignment QC"),
-    ("picks_qc", "Gate 2 - picks QC"),
-    ("state_selection", "Gate 3 - state selection"),
-    ("refine", "Gate 4 - resolution sign-off"),
-]
+GATES = sources._run_state.GATES
 
 # Phase numbers mean nothing to a human, so the table names each stage. These
 # mirror opus-et-warp/scripts/manifest.yml (the canonical map validate.sh
@@ -1766,6 +1761,10 @@ def build_attention(snapshot, jobs, gates, waiting):
     it is running with nothing in the queue, or a filesystem about to fill.
     """
     items = []
+    rs = snapshot.get("run_state")
+    run_state = (rs.data if rs is not None and rs.data else {}) or {}
+    waiting_gates = {e.get('gate') for e in run_state.get('phases', {}).values()
+                     if e.get('status') == 'checkpoint' and e.get('gate')}
     dead = [j for j in jobs
             if str(j.get("state", "")).upper() in ("FAILED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY")]
     for j in dead[:5]:
@@ -1778,7 +1777,7 @@ def build_attention(snapshot, jobs, gates, waiting):
         items.append({"level": "action",
                       "text": f"phase {named} parked at a checkpoint"})
     for g in gates:
-        if not g.get("approved") and waiting:
+        if not g.get("approved") and waiting and (not waiting_gates or g['gate'] in waiting_gates):
             items.append({"level": "action",
                           "text": f"{g['label']} not signed off -- review the "
                                   "evidence, then have the conductor record the "
@@ -1793,8 +1792,9 @@ def build_attention(snapshot, jobs, gates, waiting):
             if str(j.get("state", "")).upper() in ("RUNNING", "PENDING")}
     for phase, entry in ((run_state.get("phases") or {}).items()):
         if (entry or {}).get("status") == "running":
-            pj = {str(x) for x in ((entry or {}).get("jobs") or [])}
-            if pj and not (pj & live):
+            pj = set(sources._run_state.phase_job_ids(entry or {}))
+            sq = snapshot.get('squeue')
+            if pj and sq is not None and not sq.error and not (pj & live):
                 items.append({"level": "warn",
                               "text": f"phase {phase} is marked running but no job "
                                       "of its own is queued"})
@@ -1814,9 +1814,9 @@ def build_attention(snapshot, jobs, gates, waiting):
 
 
 def build_gates(run_state):
-    approved = {c.get("gate") for c in ((run_state or {}).get("checkpoints") or [])
-                if isinstance(c, dict)}
-    return [{"gate": g, "label": label, "approved": g in approved} for g, label in GATES]
+    return [{"gate": g, "label": label,
+             "approved": sources._run_state.gate_approved(run_state or {}, g)}
+            for g, label in GATES]
 
 
 def build_status(snapshot, work_dir=None):

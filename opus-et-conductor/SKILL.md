@@ -1,6 +1,6 @@
 ---
 name: opus-et-conductor
-description: Use when the user wants a full cryo-ET run driven end-to-end on a SLURM cluster rather than one phase: start or resume a run, see where it stopped, find which human gate is waiting on them, or approve a checkpoint. Also use when a work dir already holds .opus_run_state.json.
+description: "Use when the user wants a full cryo-ET run driven end-to-end on a SLURM cluster rather than one phase: start or resume a run, see where it stopped, find which human gate is waiting on them, or approve a checkpoint. Also use when a work dir already holds .opus_run_state.json."
 ---
 
 # OPUS-ET Conductor
@@ -18,19 +18,23 @@ through mechanical phases, paused at scientific judgment calls.
 Before submitting any job, discover the environment and cluster:
 `scripts/preflight.py` is a library, not a CLI (no `__main__`) — the conductor
 imports it and calls `preflight.probe(...)` directly (there is no
-`python scripts/preflight.py` invocation). `probe` auto-detects the WARP fork,
-the three conda envs, AreTomo2/MTools/MCore/dsdsh/headerPyTom, and
-SLURM partitions. For everything it returns under `missing`, ask the user
+`python scripts/preflight.py` invocation). `probe` checks the supplied WARP path/env names and discovers available tools
+and SLURM partitions. Run these probes on the cluster login node (directly or
+over SSH), not on the desktop. For everything it returns under `missing`, ask the user
 with a clarifying question. Persist answers into `.opus_run_state.json`
 (`environment`, `cluster`, `preflight.status="done"`). A wrong WARP fork, absent
 conda env, or unknown partition BLOCKS with a specific remediation.
 
+Set `SKILL_DIR` to the absolute cluster-side WARP-skill directory using
+`opus-et-warp/references/configuration.md`; submit from `$WORK_DIR` with `logs/` present.
+
 ## State model
 `scripts/run_state.py` owns `.opus_run_state.json` (schema v1). On any (re)start:
-1. `load_state(work_dir)`.
+1. `init_state(work_dir)` (loads existing state or creates it).
 2. Get live jobs: `squeue --noheader -o %i` → `parse_squeue_ids` → `reconcile_jobs`
-   (running phases whose jobs are gone become `verifying`).
-3. Refresh disk-derived status: run `opus-et-warp/validate.sh --json --phase <N>`,
+   only after a successful query. Pass `query_succeeded=False` on SSH/SLURM failure;
+   a successful empty queue still moves finished jobs to `verifying`.
+3. Refresh disk-derived status: run `"$SKILL_DIR/validate.sh" --json --phase <N>`,
    feed to `phase_status_from_validate`, update phases. Note:
    `phase_status_from_validate` returns a `completion` axis ("done"/"partial"/
    "pending") that is SEPARATE from the phase-lifecycle `status` field below —
@@ -50,8 +54,8 @@ mask, since 8b auto-creates a default sphere):
    validate.sh standalone without a completed preflight. Resolve derived values.
 2. If a gate precedes this phase and is unapproved → open checkpoint (see
    references/gate_protocols.md), wait, record the decision.
-3. `sbatch --export=ALL,SKILL_DIR="$(pwd)" scripts/<script>` with the cluster's
-   partition/gres. Record job_id; set status running.
+3. `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/<script>"` with the cluster's
+   partition/gres. Record `set_phase(state, N, "running", job_ids=[job_id])`; save state.
 4. Monitor squeue (background). On completion → verifying. For a run that will
    span several phases, offer to launch the `opus-et-status` dashboard
    (`python3 opus-et-status/scripts/status_server.py --host <alias> --work-dir $WORK_DIR`):
@@ -81,11 +85,14 @@ reconstruction set. To add a species (e.g. `fas` alongside `ribo`):
   `INPUT_MRC`/`MAP_ANGPIX` to resample, or a ready `TM_BOX_SIZE`³ TM template copied
   straight to `templates/<label>_tm.mrc`), `DIAMETER`, mask via `tm_auto_mask.py`,
   `TEMPLATE_INVERT`, `NUM_CANDIDATES` (per abundance), and a species-specific `DATADIR`
-  (e.g. `subtomo_<label>`) so exports don't collide.
-- Pass it to every Phase-6+ script via `--export=ALL,SKILL_DIR="$(pwd)",SPECIES_CONF="$(pwd)/species_<label>.conf"`.
+  (e.g. `subtomo_<label>`) for training. `DATADIR` does not redirect WARP export.
+- Pass it to every Phase-6+ script via `--export=ALL,SKILL_DIR="$SKILL_DIR",SPECIES_CONF="$SKILL_DIR/species_<label>.conf"`.
 - Outputs auto-namespace under the label: `template_matching/<label>/`, `opuset/<label>/z<ZDIM>/`.
-- Species run independently (and in parallel) on the same tomograms; validate each on one
-  reference-rich tomogram first (see Gate `tm_params`).
+- Serialize exports sharing a WARP processing tree. Before another export, preserve
+  `subtomo/` as `subtomo_<label>/` and update both STAR image paths and `DATADIR`;
+  see `opus-et-warp/references/workflow.md` §7.1. Existing particles block export by default.
+- State currently tracks one active species per phase. Use separate run/state directories
+  for concurrent species; never reuse one species' approvals for another.
 
 ## Visualization finale
 After a high-res map + poses exist, hand off to the `opus-et-visualize` skill.

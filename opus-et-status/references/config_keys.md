@@ -25,13 +25,13 @@ Each key declares its file (**species** = the conf chosen with `--species-conf`;
 
 | Key | Type | Constraint | Notes |
 |---|---|---|---|
-| `DIAMETER` | float | >= 50, <= 2000 | Particle diameter in Angstrom. **⚠ TM_BOX_SIZE and SUBTOMO_BOX_SIZE are sized from DIAMETER (~ DIAMETER/0.75/pixel size). Changing it without updating both boxes leaves them inconsistent.** |
+| `DIAMETER` | float | >= 50, <= 1500 | Particle diameter in Angstrom. **⚠ TM_BOX_SIZE and SUBTOMO_BOX_SIZE are sized from DIAMETER (~ DIAMETER/0.75/pixel size). Changing it without updating both boxes leaves them inconsistent.** |
 | `TM_BOX_SIZE` | int | >= 16, <= 256, even | TM template/mask box at ALIGN_ANGPIX; ~ round_to_even(DIAMETER / 0.75 / ALIGN_ANGPIX). **⚠ Should be a multiple of 8, preferably 16, for FFT efficiency -- but the sizing rule is round_to_even(DIAMETER / 0.75 / pixel size), so a multiple of 8 is a preference, not a hard rule.** |
 | `MASK_RADIUS` | int | >= 1, <= 128 | TM sphere mask radius in pixels; MASK_RADIUS + MASK_SIGMA must be < TM_BOX_SIZE/2. |
 | `MASK_SIGMA` | float | >= 0, <= 5 | TM mask soft-edge sigma in px; keep at 1 unless a softer edge is wanted. |
 | `TEMPLATE_INVERT` | enum | one of 0 / 1 | Invert template contrast. |
 | `TEMPLATE_MIRROR` | enum | one of 0 / 1 | Mirror the template (handedness). |
-| `DEFAULT_Z_START` | int | >= 0, <= 2000 | Z index where the TM search region starts; must lie inside the tomogram. |
+| `DEFAULT_Z_START` | int | >= 0, <= 1024 | Z index where the TM search region starts; must lie inside the tomogram. |
 | `TM_SPLIT_X` | int | >= 1, <= 8 | TM job split along X. |
 | `TM_SPLIT_Y` | int | >= 1, <= 8 | TM job split along Y. |
 | `TM_SPLIT_Z` | int | >= 1, <= 8 | TM job split along Z. |
@@ -49,8 +49,8 @@ Each key declares its file (**species** = the conf chosen with `--species-conf`;
 
 | Key | Type | Constraint | Notes |
 |---|---|---|---|
-| `OUTPUT_ANGPIX` | float | > 0, <= 1000 | Exported subtomogram pixel size; must be >= raw ANGPIX. |
-| `SUBTOMO_BOX_SIZE` | int | >= 32, <= 1024, even | Subtomogram box at OUTPUT_ANGPIX; ~ round_to_even(DIAMETER / 0.75 / OUTPUT_ANGPIX). **⚠ Should be a multiple of 8, preferably 16, for FFT efficiency -- but the sizing rule is round_to_even(DIAMETER / 0.75 / pixel size), so a multiple of 8 is a preference, not a hard rule.** |
+| `OUTPUT_ANGPIX` | float | > 0, <= 20 | Exported subtomogram pixel size; must be >= raw ANGPIX. |
+| `SUBTOMO_BOX_SIZE` | int | >= 32, <= 400, even | Subtomogram box at OUTPUT_ANGPIX; ~ round_to_even(DIAMETER / 0.75 / OUTPUT_ANGPIX). **⚠ Should be a multiple of 8, preferably 16, for FFT efficiency -- but the sizing rule is round_to_even(DIAMETER / 0.75 / pixel size), so a multiple of 8 is a preference, not a hard rule.** |
 
 ## Training (species conf)
 

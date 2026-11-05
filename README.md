@@ -127,7 +127,7 @@ flowchart LR
 - **For a real run** — an HPC cluster (SLURM + GPUs) with the cryo-ET toolchain the skills drive: **WARP** (the [`alncat` fork](https://github.com/alncat/warp), required for `--dont_correct_ctf_3d` / `--output_ctf_csv`), **AreTomo2**, **PyTOM**, **OPUS-ET** (`dsdsh`), and **M** (`MTools` / `MCore`), each in its conda env. The conductor's preflight probes for these and reports whatever is missing — it does not install them.
 - **For the in-cell finale** — a local **ChimeraX 1.10 + ArtiaX 0.7.0** desktop (the render runs locally, not on the cluster).
 
-**Install the skills.** Clone the repo and make the five skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy each in:
+**Install the skills.** Clone the repo and make the five skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy all five in together: status imports conductor from the sibling directory. Demo assets remain in the cloned repository.
 
 ```bash
 git clone https://github.com/alncat/opus-et-agent.git
@@ -165,7 +165,7 @@ Everything shown is read from what the pipeline already wrote — WARP's `proces
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/pytest          # 516 tests, all green
+.venv/bin/pytest          # run the complete regression suite
 ```
 
 [`demo/README.md`](demo/README.md) tells the figure-by-figure scientific story.

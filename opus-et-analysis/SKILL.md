@@ -1,6 +1,6 @@
 ---
 name: opus-et-analysis
-description: Use when the user has OPUS-ET training output and wants to interpret it: PCA or k-means over the latent codes of an epoch, volumes for cluster centres or principal components, per-state STAR files, pose parsing, the original pixel size, a training command for a new run, or a molecule mask and gold-standard FSC between half maps after Gate 3 or 4. Also use for state-vs-template and per-tomogram state-consistency checks.
+description: "Use when the user has OPUS-ET training output and wants to interpret it: PCA or k-means over the latent codes of an epoch, volumes for cluster centres or principal components, per-state STAR files, pose parsing, the original pixel size, a training command for a new run, or a molecule mask and gold-standard FSC between half maps after Gate 3 or 4. Also use for state-vs-template and per-tomogram state-consistency checks."
 ---
 
 # opus-et Analysis
@@ -20,7 +20,7 @@ Process and analyze cryo-ET training results from opus-et.
 
 
 ## Training Command Generation
-`scripts/generate_train_cmd.py --help` generates the training script -- the template it emits is reproduced verbatim in the reference, with every parameter explained; prefer the script to hand-editing. Full text: `references/training_command.md`.
+Run `python <skill-dir>/scripts/generate_train_cmd.py --help` for the required arguments, then invoke it with those arguments to generate a training script. Prefer the generator to hand-editing; the reference explains its options. Full text: `references/training_command.md`.
 
 ## Helper Scripts
 
@@ -50,9 +50,9 @@ Checks overlap between two star files based on 3D coordinates.
 python <skill-dir>/scripts/exclude_stars.py <reference.star> <query.star>
 ```
 
-**Pixel size:** Auto-detected from `config.pkl` in the current directory (`Apix * downfrac`). Falls back to 3.37 Å if no config.pkl is found.
+**Pixel size:** Supply `--angpix`, or load `Apix * downfrac` from `--config` (default: `config.pkl` in the current directory). Missing or invalid sampling stops the command; it never guesses a pixel size.
 
-**Distance threshold:** `136/angpix` voxels = **136 Å** (constant physical distance regardless of pixel size).
+**Distance threshold:** `--distance` sets the physical distance in Å (default: **136 Å**), converted to voxels using the pixel size.
 
 ## Determining the Original Pixel Size
 
@@ -66,7 +66,7 @@ original_Apix = config['model_args']['Apix'] * config['dataset_args']['downfrac'
 ```
 
 **From the star file** (alternative):
-Check `_rlnDetectorPixelSize` (column 9) in the star file header — this is the original pixel size of the raw data.
+Check `_rlnDetectorPixelSize` (look up the named column) in the star file header — this is the exported subtomogram pixel size.
 
 The two values should agree closely. The star file value is the authoritative original; the config.pkl derivation is the training pipeline's record of it.
 

@@ -50,8 +50,8 @@ When recording, run the conductor in **replay mode**. Set `demo_replay: true` in
 ## Staging a gate (so the conductor stops there)
 1. Confirm the target gate's upstream outputs exist on disk (they do for Gates 1–4).
 2. Make the gate **unapproved** so the conductor re-opens it: in `.opus_run_state.json`
-   clear that gate's approval (e.g. `gates.gate1.status` back to `pending`/unset
-   `approved`). Keep a per-gate snapshot of the state file so you can reset and re-take:
+   call `run_state.open_checkpoint(state, gate, next_phase)` followed by
+   `run_state.save_state(state)` (e.g. `gate="alignment_qc"`, `next_phase="6"`). Keep a per-gate snapshot of the state file so you can reset and re-take:
    `cp .opus_run_state.json .demo_snapshots/gate1.json` (and restore before each take).
 3. Optionally set `demo_replay: true`.
 

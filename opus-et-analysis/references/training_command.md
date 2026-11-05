@@ -114,7 +114,7 @@ NUM_EPOCHS=40
 BATCH_SIZE=10
 LEARNING_RATE=3.0e-5
 BETA_CONTROL=0.5                   # KL divergence weight
-LAMB=0.5                           # Structural disentanglement weight
+LAMB=0.5                           # UMAP/MMD prior restraint weight
 BFACTOR=3.0                        # B-factor sharpening
 NUM_GPUS=4
 OUTPUT_DIR=.
@@ -122,7 +122,7 @@ VAL_FRAC=0.05
 TEMPLATERES=128
 
 # ==============================================================================
-# TRAINING COMMAND
+# TRAINING COMMAND (multi-body example; omit --masks if no --mask-params was supplied)
 # ==============================================================================
 
 torchrun --nproc_per_node=${NUM_GPUS} -m cryodrgn.commands.train_tomo_dist \
@@ -181,7 +181,7 @@ torchrun --nproc_per_node=${NUM_GPUS} -m cryodrgn.commands.train_tomo_dist \
 | `ZDIM` | Tunable | Composition latent dim | `8` (default) |
 | `--zaffinedim` | Tunable | Conformation latent dim | `4` (continuous conformational changes) |
 | `BETA_CONTROL` | Tunable | Reconstruction vs KL balance | `0.5-1.0` |
-| `LAMB` | Tunable | Disentanglement strength | `0.5-1.0` |
+| `LAMB` | Tunable | UMAP/MMD prior restraint strength | `0.5-1.0` |
 | `BFACTOR` | Tunable | Map sharpening factor | `3.0` |
 | `TEMPLATERES` | Tunable | Output box size | `128` |
 | `--warp` | Flag | Enable I/O for WarpTools subtomograms | Add when using WarpTools |

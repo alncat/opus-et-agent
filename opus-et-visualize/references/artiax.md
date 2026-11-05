@@ -29,6 +29,12 @@ M1-stub commands like `artiax open particles` and `artiax attach ... geomodel`
   particles register with the tomogram. Symptom if omitted: the particle cloud
   is ~`coords_angpix`x too small vs the tomogram. The **map** needs no
   scaling — its size comes from its MRC header voxel size.
+  RELION origin shifts need a separate `transScaleFactor`: use the origin pixel
+  size for `rlnOriginX/Y/Z`, and `1.0` for `rlnOrigin*Angst`. It need not equal
+  the coordinate pixel size. `emit_cxc` reads the STAR units; pass
+  `origin_angpix` when pixel origins use a different sampling from coordinates.
+  `write_relion_star` preserves origins, and `reconcile_coords` subtracts them
+  to obtain refined physical centres. Supply a STAR filtered to the displayed tomogram.
 - **Attach + style:** `artiax attach #<map> toParticleList #<pl>` (map model
   must be a Volume); `artiax show #<pl> surface`; `hide #<pl>.3 models` (hide
   auto markers); `color #<pl> <color>`.
@@ -70,8 +76,7 @@ picks only *marked* (validation, or a rare-species "here it really is" shot):
   interior untouched — best for revealing density), `transparent` (tinted disc,
   density shows through), `solid` (opaque — unmissable but hides the particle).
   For a moving Z-scan, `solid` reads best (a thin ring flickers against the grain).
-- **Scannable Z-scan reveal (plain ChimeraX, not ArtiaX).** ArtiaX's orthoslice
-  can't be driven by command, so scan a plain `volume` image-plane with the picks
+- **Scannable Z-scan reveal (plain ChimeraX, not ArtiaX).** For this recipe, scan a plain `volume` image-plane with the picks
   as fixed BILD markers (`--bild` above); each barrel appears under its marker as
   the plane crosses its Z:
   ```
@@ -144,3 +149,7 @@ result) are a plain-ChimeraX `open map ; volume level <mean+4sd> ; surface dust
   a python that has mrcfile, render figures with either. Verify an mp4 without
   ffmpeg via `qlmanage -t -s 1100 -o <dir> movie.mp4` (QuickLook thumbnail).
 
+
+ArtiaX 0.7.0 also supports command-driven tomogram slices via `artiax tomo`,
+with `slice`, `endSlice`, `slicePerFrame` and `sliceDirection`. The plain
+ChimeraX volume recipes above are alternatives, not a limitation of ArtiaX.

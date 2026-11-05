@@ -132,11 +132,12 @@ if [ -n "$EXISTING_SUBTOMO" ]; then
     echo "  prefix to match (SKILL.md item 22):"
     echo "      mv \"$SUBTOMO_DIR\" \"${SUBTOMO_DIR}_<label>\""
     echo "############################################################"
-    if [ "${ABORT_ON_EXISTING_SUBTOMO:-0}" = "1" ]; then
-        echo "ERROR: ABORT_ON_EXISTING_SUBTOMO=1 set — refusing to overwrite. Exiting without exporting."
+    if [ "${ABORT_ON_EXISTING_SUBTOMO:-1}" != "0" ]; then
+        echo "ERROR: refusing to overwrite existing subtomograms (default)."
+        echo "Set ABORT_ON_EXISTING_SUBTOMO=0 only for an intentional, authorized replacement."
         exit 1
     fi
-    echo "  Proceeding anyway (non-fatal). Set ABORT_ON_EXISTING_SUBTOMO=1 to stop instead."
+    echo "  Proceeding with explicitly enabled overwrite (ABORT_ON_EXISTING_SUBTOMO=0)."
     echo ""
 fi
 

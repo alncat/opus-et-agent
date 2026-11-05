@@ -27,6 +27,9 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 | `gen_training_mask.slurm` | Training mask | 16 GB |
 | `train_opuset.slurm` | Train OPUS-ET heterogeneity model (4 GPUs) | 256 GB |
 | `train_opuset_fixed.slurm` | Train OPUS-ET fixed-mode (encoder-free, homogeneous average; run twice on even/odd splits to produce M half-maps) | 256 GB |
+| `analyze_opuset.slurm` | Analyze latent states and reconstruct cluster maps | 32 GB |
+| `select_state.slurm` | Inject refined poses and select states | 32 GB |
+| `prepare_m_halfmaps.slurm` | Prepare half-maps and mask for M | 32 GB |
 | `warp_m_setup.slurm` | M refinement: create_population + create_source (one-shot) — `references/advanced.md` | 16 GB |
 | `warp_m_create_species.slurm` | M refinement: create_species (per species) | 64 GB |
 | `warp_m_update_mask.slurm` | M refinement: update_mask (between passes only — needs a completed refine first) | 32 GB |
@@ -41,7 +44,7 @@ For `warp_m_update_mask.slurm` and `warp_m_export.slurm`, `SPECIES_BASE` may be 
 ship with generic `--partition`, `--gres`, and `--time` defaults. Before the
 first submission on a new cluster:
 
-- For scripts with no `--gres=gpu:*`, replace `--partition=normal` with `--partition=$CPU_PARTITION`. This includes CPU-only scripts such as `convert_*`, `gen_*`, `extract_*`, `warp_tiltseries_setup`, `warp_m_setup`, `warp_m_create_species`, `warp_m_update_mask`, `warp_update_tomo_dims`, and `warp_import_alignments`.
+- For scripts with no `--gres=gpu:*`, replace `--partition=normal` with `--partition=$CPU_PARTITION`. This includes CPU-only scripts such as `convert_*`, `gen_*`, `extract_*`, `warp_tiltseries_setup`, `warp_m_setup`, `warp_m_update_mask`, `warp_update_tomo_dims`, and `warp_import_alignments`.
 - For any script that has `--gres=gpu:*`, use `--partition=$GPU_PARTITION` even if the shipped partition is `normal`. This includes `warp_frameseries_import.slurm` and `warp_export_stacks.slurm`.
 - Replace the shipped GPU request (`--gres=gpu:1`, `--gres=gpu:4`, etc.) with the cluster-specific GPU request and adjust `--nproc_per_node` / `--num-gpus` in the training scripts to match `$NUM_GPUS`.
 - `--time` defaults are guesses (12h CTF, 24h recon, 48h TM, 120h training). If the user knows their cluster's max time or expected scale (e.g. 200 TS vs 20), bump or lower accordingly.

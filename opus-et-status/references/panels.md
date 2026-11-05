@@ -337,3 +337,14 @@ This **runs on the login node** (about 10–20 s per tomogram here) and needs
 appear immediately — the QC source is invalidated rather than waiting out its
 300 s TTL.
 
+
+### Prerequisites for on-demand rendering
+
+Browsing existing PNGs does not require remote scientific packages. The Render
+buttons do: copy `opus-et-visualize/scripts/slice_preview.py` and
+`tm_picks_overlay.py` into `$WORK_DIR/qc_tools/` on the cluster, and make sure the
+remote `python3` has numpy, mrcfile and matplotlib. Use `--remote-init` to activate
+an existing suitable environment if needed. These render operations run on the
+SSH host; use pre-generated images if its login-node policy disallows this work.
+Local thumbnail generation optionally uses Pillow; without it thumbnails may
+be unavailable even when full PNGs are readable.

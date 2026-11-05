@@ -7,7 +7,9 @@ value, so shell metacharacters cannot reach a file that gets `source`d.
 from __future__ import annotations
 
 import re
+import json
 import time
+import uuid
 from dataclasses import dataclass
 
 import sources
@@ -334,7 +336,9 @@ def recommend(key, pipeline_values, species_values=None):
 
 def cross_key_check(key, value, pipeline_values, species_values=None):
     """Domain rules spanning keys (and files)."""
-    species_values = species_values or {}
+    species_values = dict(species_values or {})
+    if key in ALLOWLIST and ALLOWLIST[key].file == 'species':
+        species_values[key] = value
 
     if key in ("TM_BOX_SIZE", "SUBTOMO_BOX_SIZE"):
         px, label = _box_pixel_size(key, pipeline_values, species_values)
@@ -349,12 +353,13 @@ def cross_key_check(key, value, pipeline_values, species_values=None):
             _check_box_covers_particle(box_key, _num(species_values.get(box_key)),
                                        float(value), px, label)
 
-    if key == "MASK_RADIUS":
+    if key in ("MASK_RADIUS", "MASK_SIGMA", "TM_BOX_SIZE"):
         box = species_values.get("TM_BOX_SIZE")
         sigma = species_values.get("MASK_SIGMA")
-        if box:
+        radius = species_values.get("MASK_RADIUS")
+        if box and radius is not None:
             limit = float(box) / 2.0
-            total = float(value) + (float(sigma) if sigma else 0.0)
+            total = float(radius) + (float(sigma) if sigma else 0.0)
             if total >= limit:
                 raise ValidationError(
                     f"MASK_RADIUS + MASK_SIGMA ({total:g}) must be < TM_BOX_SIZE/2 "
@@ -371,11 +376,12 @@ def cross_key_check(key, value, pipeline_values, species_values=None):
             raise ValidationError(
                 f"DEFAULT_Z_START ({value:g}) must be inside the tomogram: "
                 f"TOMO_DIM_Z {depth} / BINNING_FACTOR {binning} = {nz:g} slices.")
-    if key == "EXTRACT_MASK_RADIUS":
+    if key in ("EXTRACT_MASK_RADIUS", "MASK_RADIUS"):
         sphere = species_values.get("MASK_RADIUS")
-        if sphere and float(value) <= float(sphere):
+        extraction = species_values.get("EXTRACT_MASK_RADIUS")
+        if sphere is not None and extraction is not None and float(extraction) <= float(sphere):
             raise ValidationError(
-                f"EXTRACT_MASK_RADIUS ({value}) must exceed the sphere "
+                f"EXTRACT_MASK_RADIUS ({extraction}) must exceed the sphere "
                 f"MASK_RADIUS ({sphere}): it is the non-max-suppression radius, "
                 "and too small merges nothing, giving duplicate hits.")
     if key == "OUTPUT_ANGPIX":
@@ -438,6 +444,20 @@ class ConfigEditor:
         self.species_conf_path = species_conf_path
         self.pipeline_conf_path = pipeline_conf_path
         self.validate_cmd = list(validate_cmd)
+
+    def _validate(self, command):
+        res = self.client.run(command, timeout=180)
+        if res.rc != 0:
+            raise ValidationError(res.stdout.strip() or res.stderr.strip())
+        if '--json' in command:
+            try:
+                data = json.loads(res.stdout)
+                valid = (isinstance(data, dict) and data.get('errors') == 0
+                         and isinstance(data.get('checks'), list))
+            except (TypeError, ValueError):
+                valid = False
+            if not valid:
+                raise ValidationError('validate.sh did not return a successful JSON validation result')
 
     @property
     def _species_dir(self):
@@ -540,12 +560,17 @@ class ConfigEditor:
             text = apply_edit(text, key, raw)      # raises before any write
 
         target = f"{self._species_dir}/{filename}"
-        self.client.write_file(target, text)
-        res = self.client.run(self.validate_cmd + ["--species", target])
-        if res.rc != 0:
-            self.client.run(["rm", "-f", "--", target])
-            raise ValidationError(
-                f"validate.sh rejected the new conf, removed it: {res.stdout.strip()}")
+        try:
+            self.client.write_file(target, text)
+            self._validate(self.validate_cmd + ["--species", target])
+        except Exception as exc:
+            try:
+                removed = self.client.run(["rm", "-f", "--", target])
+                if removed.rc != 0:
+                    raise OSError(removed.stderr)
+            except Exception as cleanup:
+                raise ValidationError(f'validation failed: {exc}; could not remove {target}: {cleanup}') from exc
+            raise ValidationError(f'validation failed, removed the new conf: {exc}') from exc
         return filename
 
     def apply(self, key, raw, species=None):
@@ -569,14 +594,17 @@ class ConfigEditor:
 
         new_text = apply_edit(original, key, raw)
 
-        backup = f"{target}.bak.{time.strftime('%Y%m%dT%H%M%S')}"
+        backup = f"{target}.bak.{time.strftime('%Y%m%dT%H%M%S')}.{uuid.uuid4().hex}"
         self.client.write_file(backup, original)
-        self.client.write_file(target, new_text)
-
-        res = self.client.run(self.validate_cmd)
-        if res.rc != 0:
-            self.client.write_file(target, original)  # roll back
-            raise ValidationError(
-                f"validate.sh rejected the change, rolled back: {res.stdout.strip()}"
-            )
+        try:
+            self.client.write_file(target, new_text)
+            command = self.validate_cmd + (["--species", target] if spec.file == "species" else [])
+            self._validate(command)
+        except Exception as exc:
+            try:
+                self.client.write_file(target, original)
+            except Exception as rollback:
+                raise ValidationError(f'validation/save failed: {exc}; rollback failed: {rollback}; '
+                                      f'restore {target} from {backup}') from exc
+            raise ValidationError(f'validation/save failed, rolled back: {exc}') from exc
         return backup
