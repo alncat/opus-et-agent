@@ -634,3 +634,24 @@ def test_pixel_size_and_box_ceilings_are_physical():
         ce.coerce(ce.ALLOWLIST["SUBTOMO_BOX_SIZE"], "1024")
     assert ce.coerce(ce.ALLOWLIST["OUTPUT_ANGPIX"], "4.2") == 4.2
     assert ce.coerce(ce.ALLOWLIST["SUBTOMO_BOX_SIZE"], "104") == 104
+
+@pytest.mark.parametrize('output', ['', '{}', 'not JSON', '{"errors": 1, "checks": []}'])
+def test_production_shell_validation_requires_json_and_rolls_back(output):
+    import status_server
+    c = FakeClient({'/run/species.conf': CONF, '/run/pipeline.conf': 'ANGPIX=3.37\n'},
+                   validate_out=output)
+    editor = ce.ConfigEditor(c, '/run/species.conf', '/run/pipeline.conf',
+                            status_server.validation_cmd('/run', '/run/pipeline.conf'),
+                            expects_json=True)
+    with pytest.raises(ce.ValidationError):
+        editor.apply('ZDIM', '16')
+    assert c.files['/run/species.conf'] == CONF
+
+
+def test_json_failure_shows_actionable_messages():
+    c = FakeClient({'/run/species.conf': CONF, '/run/pipeline.conf': 'ANGPIX=3.37\n'},
+                   validate_rc=1, validate_out='{"errors": 1, "checks": [{"status": "fail", "message": "Box too small"}]}')
+    with pytest.raises(ce.ValidationError, match='Box too small') as exc:
+        _editor(c).apply('ZDIM', '16')
+    assert '"checks"' not in str(exc.value)
+    assert c.files['/run/species.conf'] == CONF

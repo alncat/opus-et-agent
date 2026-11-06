@@ -22,8 +22,7 @@ conformational state, via ChimeraX + ArtiaX.
   AFTER `tile #* columns N`, or it won't apply.
 - **Judge Gate-3 state resolution in 3D at a HIGH percentile contour, not by CC.** Render the
   k-means state gallery with `python <repo-dir>/demo/gen_gallery_cxc.py --maps-dir <maps> --out gallery.cxc --percentile 98` (per-map 98th-percentile
-  contour). ChimeraX's default/auto contour sits too low and renders high-res detail as
-  low-density "speckle" that reads as junk. Two traps invert the ranking: (a) a sharp
+  contour). A low contour can include solvent speckle; an excessively high contour can fragment real density. Inspect several matched contours before judging a state. Two traps invert the ranking: (a) a sharp
   high-res map correlates *less* with the blurry averaged consensus / low-res template, so
   `compare_to_template.py`'s CC ranking pushes the BEST states to the BOTTOM — treat low
   consensus-CC as a POSSIBLE high-res signal, not junk, and cross-check in 3D; (b) a cleanly
@@ -48,7 +47,7 @@ thousands, validate ONE particle:
 `euler_to_matrix` uses the RELION ZYZ `Euler_angles2matrix` convention.
 
 ## ArtiaX 0.7.0 scene recipe (verified locally on the Mac)
-The exact ChimeraX/ArtiaX command sequence `emit_cxc()` writes: open tomogram, import particle list, attach map, colour by state; verified against ArtiaX 0.7.0 / ChimeraX 1.10. Full text: `references/artiax.md`.
+The scene recipe implemented by `emit_cxc()`: open tomogram, import particle list, attach map, colour by state; verified against ArtiaX 0.7.0 / ChimeraX 1.10. Full text: `references/artiax.md`.
 
 ## Usage
 **`scripts/gen_artiax_scene.py` is a library, not a CLI (no `__main__`).**
@@ -74,16 +73,6 @@ gs.emit_cxc(tomogram="TS_026.mrc", map_path="ref.mrc",
             state_stars=stars, out_cxc="scene.cxc", coords_angpix=A)
 ```
 Produces one RELION star per state plus `scene.cxc`.
-
-**M2 target — not yet wired.** The plan calls for a real `main()`/argparse CLI
-wrapping the same calls (see the M1 plan's "Notes for M2–M5"):
-```bash
-python scripts/gen_artiax_scene.py \
-    --star picks.star --tomogram TS_026.mrc --map ref.mrc \
-    --labels analyze.39/kmeans12/labels.pkl \
-    --coords-angpix <A> --tomo-angpix <A> \
-    --out-cxc scene.cxc --out-star-prefix state
-```
 
 Open the resulting scene in ChimeraX:
 `ChimeraX --exit scene.cxc` (GUI required — ArtiaX commands don't register

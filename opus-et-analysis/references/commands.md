@@ -135,3 +135,25 @@ set `SKILL_DIR` to the absolute WARP-skill directory and prepare its
    `dsdsh combine_star` over the chosen `pre<k>.star`.
 5. **Pose pickle for the selection (before M / fixed-mode):**
    `dsd parse_pose_star sel.star -D <effective_box_size> --Apix <original_apix> -o sel_pose.pkl`
+
+## Numerical QC helpers
+
+Run these on the host containing the input files, with the scientific Python
+requirements installed. Each helper's `--help` lists its current flags:
+
+| Helper | Purpose |
+|---|---|
+| `compute_fsc.py` | Gold-standard half-map FSC, with optional mask and phase-randomization correction |
+| `gen_mask_from_map.py` | Molecular mask from half-maps, plus optional QC overlay |
+| `state_consistency.py` | Compare reconstructed state maps and occupancies |
+| `state_tomo_stats.py` | Per-tomogram state/selection statistics |
+| `tm_eval_agreement.py` | Pick agreement against a trusted reference |
+| `exclude_stars.py` | Remove every query pick within a physical radius of a reference pick in the same tomogram |
+
+```bash
+python <skill-dir>/scripts/compute_fsc.py --help
+python <skill-dir>/scripts/gen_mask_from_map.py --help
+python <skill-dir>/scripts/state_consistency.py --help
+python <skill-dir>/scripts/state_tomo_stats.py --help
+python <skill-dir>/scripts/tm_eval_agreement.py --help
+```

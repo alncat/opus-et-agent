@@ -3,13 +3,12 @@
 Moved verbatim from SKILL.md so the skill body stays an overview; this is the reference.
 
 ## ArtiaX 0.7.0 scene recipe (verified locally on the Mac)
-`emit_cxc` was rewritten against real ArtiaX 0.7.0 behavior (5 tests cover the
-pure-Python `.cxc` generation, and run anywhere via the repo `.venv`). Old
-M1-stub commands like `artiax open particles` and `artiax attach ... geomodel`
+`emit_cxc` was rewritten against real ArtiaX 0.7.0 behavior (pure-Python `.cxc` generation tests run via the repo `.venv`). Old
+stub commands like `artiax open particles` and `artiax attach ... geomodel`
 **do not exist in 0.7.0** — do not use them.
 
 - **Renders run LOCALLY on the Mac, not on the cluster.** ChimeraX 1.10 +
-  ArtiaX 0.7.0 at `/Applications/ChimeraX-1.10.app/Contents/bin/ChimeraX`. Pull
+  ArtiaX 0.7.0 using the installed ChimeraX executable (`command -v ChimeraX`, or locate the installed macOS app bundle). Pull
   the maps/poses (`.mrc`, `sel_*.star`) down from the cluster first, then render.
 - **GUI required.** ArtiaX's commands only register once its GUI is up. Run
   scenes as `ChimeraX --exit scene.cxc` — **not** `--nogui`/`--offscreen`.
@@ -42,17 +41,11 @@ M1-stub commands like `artiax open particles` and `artiax attach ... geomodel`
   *before* attach so the contour is identical across all instances. Crop the
   map to a tight box (strip solvent padding) to cut memory when instancing
   thousands of copies. `emit_cxc` exposes this via `contour_level`/`contour_sd`.
-- **Optional translucent tomogram slab** for cell context: open a plain second
-  copy of the tomogram, `volume #N style image`, a faint *symmetric* transfer
-  function (cryo-ET density is ~0-mean, e.g.
-  `volume #N level -0.008,0.7 level -0.002,0.1 level 0.002,0.1 level 0.008,0.7`),
-  `color light gray`, and hide the ArtiaX orthoslice (`hide #1.1.1 models`).
-  `emit_cxc`'s `tomo_transfer` param controls the level string.
+- **Tomogram context:** use ArtiaX's orthoslice and keep `tomo_transfer=None`. The optional extra translucent slab broke the locally tested scene; do not enable it without verifying a small scene first.
 - `emit_cxc` params: `coords_angpix`, `contour_level`/`contour_sd`,
   `tomo_transfer`, `movie_out`.
 - **Judgment note (cross-ref the Gate-3 note in SKILL.md):** the sharpest/high-res state map
-  reads as fragmented "speckle" at a tight contour while blurry low-res maps
-  look deceptively clean — don't let that bias which state you pick.
+  can fragment at an excessively high contour, while a low contour includes solvent speckle. Inspect multiple matched contours; blurry low-res maps can look deceptively clean — don't let that bias which state you pick.
 
 ## Raw-density marker reveals — show the density, don't replace it
 The finale (above) places the *refined* map at each pose — idealized, and it
@@ -118,7 +111,7 @@ against per-tomogram particle counts (`grep -oE "TS_0[0-9]+" sel.star | sort |
 uniq -c`, ÷5 for the star's 5 mentions/row). Rotating single-map showcases (the M
 result) are a plain-ChimeraX `open map ; volume level <mean+4sd> ; surface dust
 #1 size 120 ; lighting shadows/silhouettes ; turn y 3 120` turntable. See
-`demo/render_commands.md` §B/§B3, `demo/finale/build_ts029_cell_scene.py`.
+`demo/render_commands.md` §B2, `demo/finale/build_map_spins.py`.
 
 ## ChimeraX/ArtiaX gotchas (learned the hard way)
 - **Headless `--offscreen`/`--nogui` rendering often fails.** ChimeraX offscreen

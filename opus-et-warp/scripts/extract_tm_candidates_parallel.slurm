@@ -116,9 +116,9 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "Next steps:"
     echo "  1. Inspect particle lists in PyTom GUI"
     echo "  2. Convert XML picks to per-tilt-series STAR files:"
-    echo "     sbatch scripts/convert_to_star.slurm"
+    echo "     sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/convert_to_star.slurm\""
     echo "  3. Convert per-tilt-series STAR files to WARP format:"
-    echo "     sbatch scripts/convert_pytom_to_warp.slurm"
+    echo "     sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/convert_pytom_to_warp.slurm\""
 else
     echo "WARNING: Some extractions may have failed (exit code: $EXIT_CODE)"
 fi

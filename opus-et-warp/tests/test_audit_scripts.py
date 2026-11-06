@@ -54,7 +54,6 @@ def test_export_refuses_existing_particles_unless_explicitly_overridden(tmp_path
     settings.touch()
     tools = tmp_path / 'tools'
     tools.mkdir()
-    executable(tools / 'WarpTools', '#!/bin/bash\ntouch "$WORK_DIR/export_called"\n')
     values = dict(WORK_DIR=tmp_path, PROCESSING_DIR=processing, TM_WARP_DIR=picks,
                   TILTSERIES_SETTINGS=settings, WARP_DIR=tools, OUTPUT_ANGPIX=4.2,
                   COORDS_ANGPIX=4.2, EXPORT_STAR=tmp_path / 'out.star',
@@ -110,3 +109,53 @@ shutil.copyfile(sys.argv[2], out / 'pre0.star')
     else:
         assert proc.returncode == 0, proc.stdout + proc.stderr
         assert starfile.read(out)['rlnOriginX'].tolist() == [7.0]
+
+
+@pytest.mark.parametrize('same_file', [False, True])
+def test_halfmaps_use_explicit_pair_and_reject_identical_inputs(tmp_path, same_file):
+    maps = tmp_path / 'maps'
+    maps.mkdir()
+    one, two = maps / 'one.mrc', maps / 'two.mrc'
+    one.write_bytes(b'half one')
+    two.write_bytes(b'half two')
+    base = tmp_path / 'opuset' / 'ribo'
+    base.mkdir(parents=True)
+    # Unrelated old maps must not be auto-selected.
+    old = base / 'fixed_old_subset1'
+    old.mkdir()
+    (old / 'tmp0.mrc').write_bytes(b'old map')
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    executable(bindir / 'dsdsh', '#!/bin/bash\nexit 0\n')
+    proc = run_script(tmp_path, 'prepare_m_halfmaps.slurm',
+                      dict(WORK_DIR=tmp_path, TM_LABEL='ribo', M_INPUT_HALF1=one,
+                           M_INPUT_HALF2=one if same_file else two))
+    assert (proc.returncode == 0) == (not same_file), proc.stdout + proc.stderr
+    if not same_file:
+        assert (base / 'half1.mrc').resolve() == one
+        assert (base / 'half2.mrc').resolve() == two
+        assert not (base / 'halfmap_mask.mrc').exists()
+
+
+@pytest.mark.parametrize('voltage', [200, 123])
+def test_config_only_checks_values_without_requiring_pipeline_outputs(tmp_path, voltage):
+    import json
+    conf, species = tmp_path / 'pipeline.conf', tmp_path / 'species.conf'
+    mdocs = tmp_path / 'mdoc'
+    mdocs.mkdir()
+    (mdocs / 'test.mdoc').write_text('TargetDefocus = -4.0\n')
+    values = dict(WORK_DIR=tmp_path, MDOC_DIR=mdocs, ANGPIX=1.1845,
+                  BINNING_FACTOR=4, ALIGN_ANGPIX=4.738, CTF_VOLTAGE=voltage,
+                  CTF_RANGE_MAX=8, FRAMESERIES_DIR=tmp_path / 'missing_frames',
+                  TILTSTACK_DIR=tmp_path / 'missing_stacks',
+                  TILTSERIES_SETTINGS=tmp_path / 'missing.settings')
+    conf.write_text('\n'.join(f'{k}={shlex.quote(str(v))}' for k, v in values.items()))
+    species.write_text('DIAMETER=320\nTM_BOX_SIZE=96\nSUBTOMO_BOX_SIZE=176\nOUTPUT_ANGPIX=2.5\nTEMPLATERES=240\n')
+    proc = subprocess.run(['bash', str(SCRIPTS.parent / 'validate.sh'), '--json',
+                           '--config-only', '--species', str(species)],
+                          env={**os.environ, 'PIPELINE_CONF': str(conf)},
+                          capture_output=True, text=True)
+    data = json.loads(proc.stdout)
+    assert (data['errors'] == 0) == (voltage == 200), data
+    assert (proc.returncode == 0) == (voltage == 200), proc.stderr
+    assert not any(c['status'] == 'phase_completion' for c in data['checks'])

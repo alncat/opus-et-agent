@@ -101,4 +101,4 @@ if [ -n "$SPECIES_DIR" ]; then
 fi
 
 echo ""
-echo "Done. Next: sbatch scripts/warp_m_refine.slurm (with SPECIES_BASE=$SPECIES_BASE)."
+echo "Done. Next: sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_m_refine.slurm\" (with SPECIES_BASE=$SPECIES_BASE)."

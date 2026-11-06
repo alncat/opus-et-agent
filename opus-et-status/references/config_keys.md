@@ -2,7 +2,7 @@
 
 *Generated from `ALLOWLIST` in `scripts/config_edit.py` — the source of truth.*
 
-Each key declares its file (**species** = the conf chosen with `--species-conf`;
+Each key declares its file (**species** = the active species tab (`--species-conf` sets the initial tab);
 **pipeline** = `pipeline.conf`, shared by every species) and the stage it governs.
 
 **No path-valued keys are editable.** Neither are acquisition facts (`ANGPIX`,
@@ -49,7 +49,7 @@ Each key declares its file (**species** = the conf chosen with `--species-conf`;
 
 | Key | Type | Constraint | Notes |
 |---|---|---|---|
-| `OUTPUT_ANGPIX` | float | > 0, <= 20 | Exported subtomogram pixel size; must be >= raw ANGPIX. |
+| `OUTPUT_ANGPIX` | float | >= 0.3, <= 20 | Exported subtomogram pixel size; must be >= raw ANGPIX. |
 | `SUBTOMO_BOX_SIZE` | int | >= 32, <= 400, even | Subtomogram box at OUTPUT_ANGPIX; ~ round_to_even(DIAMETER / 0.75 / OUTPUT_ANGPIX). **⚠ Should be a multiple of 8, preferably 16, for FFT efficiency -- but the sizing rule is round_to_even(DIAMETER / 0.75 / pixel size), so a multiple of 8 is a preference, not a hard rule.** |
 
 ## Training (species conf)
@@ -127,7 +127,7 @@ work, widen it here rather than working around it.
 
 For any key with a documented formula the form shows the value that rule
 gives for the *current* config, not just a numeric range — a static
-`32 – 1024` says nothing about what to type, whereas
+`32 – 400` says nothing about what to type, whereas
 `~102 (up to ~152 for high-res), from 320 Å / 0.75 / OUTPUT_ANGPIX 4.2` does.
 Computed by `recommend()` and returned as `recommended` from `/api/config`;
 the raw range is still shown underneath, smaller.
@@ -136,5 +136,5 @@ the raw range is still shown underneath, smaller.
 
 Parse to the declared type -> regenerate the line, preserving its inline comment,
 quoting style and integer-vs-decimal spelling -> timestamped backup -> write ->
-run `validate.sh` -> roll back on failure. An edit while any job is
+run `validate.sh --config-only` (configuration checks, without environment or phase-output readiness) -> roll back on failure. Full phase preflight remains required before submission. An edit while any job is
 `RUNNING`/`PENDING` returns 409 unless `confirm_running` is set.

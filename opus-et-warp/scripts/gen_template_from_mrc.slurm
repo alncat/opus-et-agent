@@ -157,5 +157,5 @@ echo "  1. Set TEMPLATE_MRC in gen_sphere_mask.slurm and gen_tm_jobs_aretomo.slu
 echo "     $OUTPUT_TEMPLATE"
 echo "  2. Set MASK_MRC to one shared mask path in gen_sphere_mask.slurm and gen_tm_jobs_aretomo.slurm."
 echo "  3. Generate a matching sphere mask:"
-echo "     sbatch scripts/gen_sphere_mask.slurm"
+echo "     sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/gen_sphere_mask.slurm\""
 echo "============================================================"

@@ -59,29 +59,20 @@ fi
 
 HALFMAP_BASE="$WORK_DIR/opuset/$TM_LABEL"
 
-echo "Searching for half-maps under: $HALFMAP_BASE"
-echo ""
-
-# Sort to get subset1 before subset2 (lexical ordering of fixed_sel*_subset*)
-mapfile -t HALFMAPS < <(find "$HALFMAP_BASE" -path "*/fixed_*subset*/tmp0.mrc" -type f 2>/dev/null | sort)
-
-if [ ${#HALFMAPS[@]} -lt 2 ]; then
-    echo "ERROR: Found ${#HALFMAPS[@]} half-map(s), need at least 2."
-    echo "  Searched pattern: */fixed_*subset*/tmp0.mrc under $HALFMAP_BASE"
-    echo ""
-    echo "  Available MRC files:"
-    find "$HALFMAP_BASE" -name "tmp0.mrc" -o -name "*.mrc" 2>/dev/null | head -20
+# Use the intended subset pair, never the first two files from multiple runs.
+HALF1="${M_INPUT_HALF1:-$HALFMAP_BASE/fixed_subset1/tmp0.mrc}"
+HALF2="${M_INPUT_HALF2:-$HALFMAP_BASE/fixed_subset2/tmp0.mrc}"
+for half in "$HALF1" "$HALF2"; do
+    if [ ! -s "$half" ]; then
+        echo "ERROR: Missing or empty half-map: $half"
+        echo "Set M_INPUT_HALF1 and M_INPUT_HALF2 to the intended disjoint subset outputs."
+        exit 1
+    fi
+done
+if [ "$HALF1" -ef "$HALF2" ]; then
+    echo "ERROR: Half-maps refer to the same file; two independent subset maps are required."
     exit 1
 fi
-
-echo "Found ${#HALFMAPS[@]} half-map(s):"
-for i in "${!HALFMAPS[@]}"; do
-    echo "  $((i+1)). ${HALFMAPS[$i]}"
-done
-
-# Use first two sorted results as half1 and half2
-HALF1="${HALFMAPS[0]}"
-HALF2="${HALFMAPS[1]}"
 
 # -----------------------------------------------------------------------------
 # Link half-maps
@@ -101,7 +92,7 @@ echo "  half2.mrc → $HALF2"
 # -----------------------------------------------------------------------------
 
 if [ -n "$M_HALFMAP_THRESHOLD" ]; then
-    MASK_OUT="$HALFMAP_BASE/halfmap_mask.mrc"
+    MASK_OUT="${M_MASK:-$HALFMAP_BASE/halfmap_mask.mrc}"
 
     echo ""
     echo "Creating mask from half1 with threshold=$M_HALFMAP_THRESHOLD..."
@@ -145,6 +136,6 @@ if [ -n "$M_HALFMAP_THRESHOLD" ]; then
 fi
 echo ""
 echo "M_HALF1, M_HALF2, and M_MASK in species.conf default to these paths."
-echo "  → Phase M is ready to submit (start with warp_m_setup, then create_species):"
-echo "     sbatch --export=ALL,SKILL_DIR=\"\$(pwd)\" scripts/warp_m_setup.slurm"
+echo "  → Before M, complete Gate 4 and verify M_MASK exists; then start with warp_m_setup:"
+echo "     sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_m_setup.slurm\""
 echo "============================================================"

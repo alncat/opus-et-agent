@@ -160,7 +160,7 @@ expected output is genuinely missing, stop and tell me.
 Same opening two sentences as B, then:
 ```
 ...Fast-forward to the resolution checkpoint (Gate 4). On the existing fixed-mode
-half-maps `opuset/ribo/fixed_subset1/half1.mrc` + `opuset/ribo/fixed_subset2/half2.mrc`
+half-maps `opuset/ribo/half1.mrc` + `opuset/ribo/half2.mrc`
 (the k17/18/19 selection at 4.2 Å/px — NOT `baseline_k6-8-9-10`), derive a molecule
 mask from the density (not a sphere), compute the gold-standard FSC with the
 phase-randomization correction, and present the corrected 0.143 resolution + the FSC

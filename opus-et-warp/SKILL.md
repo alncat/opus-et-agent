@@ -86,6 +86,8 @@ The run-directory layout each phase writes into (`warp_frameseries/`, `warp_tilt
 
 **For MTools refinement and OPUS-ET averaging:** read `references/advanced.md`
 
+**For the complete selected-state-to-M workflow:** read `references/workflow.md`
+
 **For step-by-step phase commands:** read `references/phases.md`
 
 **External reference for WarpTools API:**

@@ -19,7 +19,7 @@ python3 opus-et-status/scripts/status_server.py \
 ```
 
 Then open <http://127.0.0.1:8080>. This runs in the foreground; stop with Ctrl-C.
-Optional QC thumbnails use local Pillow. On-demand rendering additionally needs
+Missing QC thumbnails are generated on the cluster login node and require Pillow there. On-demand rendering additionally needs
 the remote scripts and scientific Python packages listed in `references/panels.md`.
 
 - `--host` is an SSH host or alias that already works non-interactively
@@ -36,7 +36,9 @@ the remote scripts and scientific Python packages listed in `references/panels.m
 - `--species-conf` defaults to `species.conf`; pass it only to start on a
   different one. Naming a conf that is not there is not fatal -- the Config tab
   says which file it could not read and every other panel still fills.
-- One run per instance. To watch a second run, start another instance on a
+- `--remote-init` supplies shell initialization for remote Python/rendering commands.
+- `--runs-parent` enables discovery of sibling run directories in the Runs tab.
+- One active run per instance. To watch a second run, start another instance on a
   different `--port`; the header names the host and run directory each one
   watches.
 - Default `--bind` is `127.0.0.1`. There is **no authentication**. To view it
@@ -87,7 +89,7 @@ extra confirm. Values are
 parsed into a declared type and the line is regenerated (preserving its inline
 comment and quoting style), so nothing arbitrary can reach a file that gets
 `source`d. Every write makes a timestamped backup and is rolled back if
-`validate.sh` rejects it.
+`validate.sh --config-only` rejects the configuration values. This skips tool availability and phase-output checks; full phase preflight is still required before submitting jobs.
 
 An edit attempted while any job is `RUNNING`/`PENDING` returns **409** — editing
 a conf mid-phase can corrupt a running job. Resubmit with

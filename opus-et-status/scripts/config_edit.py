@@ -33,7 +33,8 @@ FFT_PREFERENCE = (
     "sizing rule is round_to_even(DIAMETER / 0.75 / pixel size), so a multiple "
     "of 8 is a preference, not a hard rule.")
 
-# Read-only dataset facts surfaced in the UI but never editable.
+# Dataset summary fields. This panel is read-only; BINNING_FACTOR is also
+# exposed as a guarded processing edit in the Config tab.
 DATASET_DISPLAY_KEYS = [
     "ANGPIX", "EXPOSURE", "BINNING_FACTOR", "ALIGN_ANGPIX",
     "TOMO_DIM_X", "TOMO_DIM_Y", "TOMO_DIM_Z", "FRAME_MODE", "FILE_EXTENSION",
@@ -439,17 +440,26 @@ def apply_edit(text, key, value):
 
 
 class ConfigEditor:
-    def __init__(self, client, species_conf_path, pipeline_conf_path, validate_cmd):
+    def __init__(self, client, species_conf_path, pipeline_conf_path, validate_cmd, *, expects_json=False):
         self.client = client
         self.species_conf_path = species_conf_path
         self.pipeline_conf_path = pipeline_conf_path
         self.validate_cmd = list(validate_cmd)
+        self.expects_json = expects_json
 
     def _validate(self, command):
         res = self.client.run(command, timeout=180)
         if res.rc != 0:
+            if self.expects_json or '--json' in command:
+                try:
+                    checks = json.loads(res.stdout).get('checks', [])
+                    failures = [str(c['message']) for c in checks if c.get('status') == 'fail']
+                except (ValueError, TypeError, AttributeError, KeyError):
+                    failures = []
+                if failures:
+                    raise ValidationError('; '.join(failures))
             raise ValidationError(res.stdout.strip() or res.stderr.strip())
-        if '--json' in command:
+        if self.expects_json or '--json' in command:
             try:
                 data = json.loads(res.stdout)
                 valid = (isinstance(data, dict) and data.get('errors') == 0

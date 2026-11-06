@@ -25,7 +25,7 @@ def test_validation_uses_selected_pipeline_conf_and_forwards_species(tmp_path):
     cmd = status_server.validation_cmd(str(tmp_path), str(selected))
     proc = subprocess.run(cmd + ['--species', 'species_ribo.conf'], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.splitlines() == [str(selected), '--json', '--species', 'species_ribo.conf']
+    assert proc.stdout.splitlines() == [str(selected), '--json', '--config-only', '--species', 'species_ribo.conf']
 
 
 class StubEditor:
@@ -1279,3 +1279,9 @@ def test_status_flags_bad_ctf_fits_and_a_narrow_search_range():
     assert body["frames"]["series"][0]["ctf_flags"]
     # the poller's cached rows are not modified in place
     assert "ctf_flags" not in frames["series"][0]
+
+
+def test_attention_tolerates_null_phases():
+    from types import SimpleNamespace
+    snapshot = {'run_state': SimpleNamespace(data={'phases': None})}
+    assert status_server.build_attention(snapshot, [], [], []) == []

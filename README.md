@@ -159,7 +159,7 @@ Then open <http://127.0.0.1:8080>. `--host` is any SSH alias that already works 
 
 Nine tabs, in pipeline order: **Run** (gates, phases, SLURM jobs, log tails), **Frames** (per-movie CTF quality, dose, tilt-series alignment), **Dataset**, **Visual QC** (browse the QC images, or render new slices and pick overlays on demand), **Training**, **Inventory** (template-matching scores and the particle funnel), **Refinement** (gold-standard FSC), **Config** (allowlisted, type-checked edits to the tuning knobs) and **Runs**.
 
-Everything shown is read from what the pipeline already wrote — WARP's `processed_items.json`, PyTOM's particle XML, the acquisition MDOCs, AreTomo's `.aln` files and the run's own `logs/` — so it re-runs none of the toolchain and needs nothing installed on the login node. The server binds `127.0.0.1` and has **no authentication**: keep it local.
+Everything shown is read from what the pipeline already wrote — WARP's `processed_items.json`, PyTOM's particle XML, the acquisition MDOCs, AreTomo's `.aln` files and the run's own `logs/` — so routine polling does not rerun processing. Generating missing thumbnails requires Pillow on the cluster login node; on-demand scientific rendering requires the remote dependencies listed in `opus-et-status/references/panels.md`. The server binds `127.0.0.1` and has **no authentication**: keep it local.
 
 **Try it without a cluster.** The QC / analysis / viz tools are plain Python and test-covered — run the suite and browse the results bundle:
 

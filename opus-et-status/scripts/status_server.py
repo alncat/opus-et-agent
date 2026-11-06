@@ -1763,7 +1763,7 @@ def build_attention(snapshot, jobs, gates, waiting):
     items = []
     rs = snapshot.get("run_state")
     run_state = (rs.data if rs is not None and rs.data else {}) or {}
-    waiting_gates = {e.get('gate') for e in run_state.get('phases', {}).values()
+    waiting_gates = {e.get('gate') for e in (run_state.get('phases') or {}).values()
                      if e.get('status') == 'checkpoint' and e.get('gate')}
     dead = [j for j in jobs
             if str(j.get("state", "")).upper() in ("FAILED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY")]
@@ -2261,7 +2261,7 @@ def validation_cmd(work_dir, pipeline_conf_path, remote_init=""):
     """Run validation against the dashboard's selected config, forwarding extra args."""
     command = (f"cd {shlex.quote(work_dir)} && "
                f"PIPELINE_CONF={shlex.quote(pipeline_conf_path)} "
-               'bash opus-et-warp/validate.sh --json "$@"')
+               'bash opus-et-warp/validate.sh --json --config-only "$@"')
     if remote_init:
         command = f"{remote_init} && {command}"
     return ["sh", "-c", command, "_"]
@@ -2385,6 +2385,7 @@ def main(argv=None):
         species_conf_path=f"{wd}/opus-et-warp/{args.species_conf}",
         pipeline_conf_path=pipeline_conf_path,
         validate_cmd=validate_cmd,
+        expects_json=True,
     )
 
     def log_fetch(job, stream, lines):

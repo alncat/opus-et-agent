@@ -1,4 +1,4 @@
-# Self-Correction Catalog (seed — full loop is M2)
+# Diagnosis catalog (known failures and recovery steps)
 
 Parse `logs/*.err`. Auto-fix only known-and-safe; else escalate with the diagnosis.
 

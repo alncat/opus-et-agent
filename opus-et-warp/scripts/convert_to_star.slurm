@@ -184,7 +184,7 @@ echo "  - STAR files are saved to: $TM_STAR_DIR"
 echo ""
 echo "Next steps:"
 echo "  1. Convert to WARP STAR files:"
-echo "     sbatch scripts/convert_pytom_to_warp.slurm"
+echo "     sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/convert_pytom_to_warp.slurm\""
 echo ""
 if [ "$FAILED" -gt 0 ]; then
     echo "ERROR: One or more XML files failed conversion."

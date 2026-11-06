@@ -200,7 +200,7 @@ After analysis:
 
 ### 8. Deformation Analysis
 
-When the model is trained with deformation/warp parameters (e.g., for rigid body motion), the `analyze` command outputs both conformation latent space (`analyze.<epoch>/`) and deformation latent space (`defanalyze.<epoch>/`) results in one shot:
+When the model is trained with deformation/warp parameters (e.g., for rigid body motion), the `analyze` command outputs both composition latent space (`analyze.<epoch>/`) and deformation latent space (`defanalyze.<epoch>/`) results in one shot:
 
 ```bash
 dsdsh analyze <workdir> <epoch> <numpc> <numk>
@@ -212,7 +212,7 @@ dsdsh analyze . 39 10 30
 ```
 
 Output:
-- `analyze.39/` - Full conformation space (zdim-dimensional, e.g., 8-dim for the default ZDIM=8)
+- `analyze.39/` - Composition space (zdim-dimensional, e.g., 8-dim for the default ZDIM=8)
 - `defanalyze.39/` - Deformation parameter space (config-dependent dimensions, width = configured `zaffinedim`, independent of body count)
 
 Both directories contain similar structures (`kmeans<numk>/`, `pc<N>/`, plots).
@@ -246,7 +246,7 @@ dsd eval_vol --load weights.<epoch>.pkl \
 **Key parameters:**
 - `--deform`: Enable deformation mode
 - `--masks`: Path to `mask_params.pkl` containing rigid body definitions
-- `--template-z`: Text file with base conformation z-values (N-dim from analyze, 2D format: rows × zdim)
+- `--template-z`: Text file with base composition z-values (N-dim from analyze, 2D format: rows × zdim)
 - `--template-z-ind`: Index of template to use (0 for first row)
 - `defanalyze.<epoch>/pc<N>/z_pc.txt`: Deformation parameters (M-dimensional, from defanalyze)
 

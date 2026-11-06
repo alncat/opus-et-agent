@@ -146,11 +146,11 @@ references/
   training_command.md        # the training-script template generate_train_cmd.py emits, parameter by parameter
   workflows.md               # Gate-3 workflows, analyze.<epoch>/ layout, multi-body (defanalyze) variant
 tests/                       # pytest — one per numerical script: test_{compare_to_template,
-                             #   compute_fsc, gen_mask_from_map, state_consistency, state_tomo_stats, tm_eval_agreement}
+                             #   compute_fsc, gen_mask_from_map, state_consistency, state_tomo_stats, tm_eval_agreement, exclude_stars}
 ```
 
 ## See Also
 
-- `references/commands.md` - Detailed command reference with all options
+- `references/commands.md` - Command reference and QC helper discovery (`--help` lists current options)
 - `<skill-dir>/scripts/extract_config.py` - Extract config parameters
 - Deformation workflows are documented inline above (see "Complete Deformation Workflow Example" and "Key Differences: analyze vs defanalyze Outputs")

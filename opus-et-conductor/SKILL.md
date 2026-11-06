@@ -39,7 +39,8 @@ Set `SKILL_DIR` to the absolute cluster-side WARP-skill directory using
    `phase_status_from_validate` returns a `completion` axis ("done"/"partial"/
    "pending") that is SEPARATE from the phase-lifecycle `status` field below —
    its value must not be written directly into `status`.
-Statuses: pending → ready → running → verifying → checkpoint → done (+ failed/skipped).
+Lifecycle: pending → ready → running → verifying → done (+ failed/skipped).
+A gate parks the next phase at checkpoint; approval moves it to ready.
 (These are the allowed `status` values, in `PHASE_STATUSES`.)
 
 ## Per-phase loop (between checkpoints)
@@ -55,7 +56,7 @@ mask, since 8b auto-creates a default sphere):
 2. If a gate precedes this phase and is unapproved → open checkpoint (see
    references/gate_protocols.md), wait, record the decision.
 3. `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/<script>"` with the cluster's
-   partition/gres. Record `set_phase(state, N, "running", job_ids=[job_id])`; save state.
+   partition/gres overrides (`sbatch --partition=<partition> --gres=gpu:<count> --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/<script>"`). Record `set_phase(state, N, "running", job_ids=[job_id])`; save state.
 4. Monitor squeue (background). On completion → verifying. For a run that will
    span several phases, offer to launch the `opus-et-status` dashboard
    (`python3 opus-et-status/scripts/status_server.py --host <alias> --work-dir $WORK_DIR`):
@@ -97,7 +98,7 @@ reconstruction set. To add a species (e.g. `fas` alongside `ribo`):
 ## Visualization finale
 After a high-res map + poses exist, hand off to the `opus-et-visualize` skill.
 The **in-cell ArtiaX render** (`gen_artiax_scene.py`) runs **LOCALLY on the Mac, not on the
-cluster** — ChimeraX 1.10 + ArtiaX 0.7.0 in GUI mode (`/Applications/ChimeraX-1.10.app`). Do
+cluster** — ChimeraX 1.10 + ArtiaX 0.7.0 in GUI mode (locate the installed ChimeraX executable or macOS app bundle). Do
 NOT `sbatch` it; pull the maps/poses (`.mrc`, `sel_*.star`) down from the cluster first, then
 render locally. (So ChimeraX is not a cluster preflight requirement.) The matplotlib QC —
 Gate-2 picks (`tm_picks_overlay.py`) and Gate-1 slice previews (`slice_preview.py`), both in
@@ -112,7 +113,7 @@ must already exist on disk, so it fast-forwards (the per-phase loop already skip
 whose outputs are complete), reaches the next unapproved gate, runs only the fast QC on the
 existing outputs, and presents the checkpoint. If any output is missing, STOP — do not submit
 (a recording must never launch a multi-hour job). See `references/demo_recording.md` for the
-staging + record runbook. All gates (1–4) are recordable now — Gate-4 assets are on disk
+staging + record runbook. The supplied demo state is anchored at Gate 1; its later-gate takes run QC directly on explicitly named outputs rather than replaying a complete state history. All gates (1–4) are recordable now — Gate-4 assets are on disk
 in `demo/qc/finale/` and `demo/qc/gate4_resolution/`.
 
 ## Reference: manifest-driven phases

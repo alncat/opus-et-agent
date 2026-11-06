@@ -107,7 +107,7 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
     remains.
   - Caveat: whether WarpTools actually skips an already-produced artifact this
     way is NOT verified from this repo and must be confirmed by a live
-    integration check (M5).
+    integration check. Before submission, list the actual input glob and verify excluded series are absent; after processing, verify the output series list matches the keep-list. State bookkeeping alone is not enforcement.
 
 ## Gate 3 — State selection (after Phase 8b + analysis)
 - Prepare: `analyze_opuset.slurm` (`dsdsh analyze` + `dsdsh eval_vol kmeans` → cluster-center
@@ -158,7 +158,7 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
 ## Gate 4 — Half-map resolution + refine sign-off (after fixed-mode)
 
 Phase 8d (`prepare_m_halfmaps.slurm`) prepares `$WORK_DIR/opuset/$TM_LABEL/half1.mrc`,
-`half2.mrc` and `halfmap_mask.mrc` for M. Verify the discovered pair belongs to
+`half2.mrc` for M. Mask generation in 8d is optional; Gate 4 must create or verify `M_MASK` before M. Verify the configured input pair belongs to
 the intended disjoint selected-particle half-sets. In the QC commands below,
 `half1.mrc` and `half2.mrc` denote those verified files; use their full paths.
 - **Fixed-mode half-maps:** split `sel_<label>.star` into two gold-standard halves →
@@ -168,7 +168,7 @@ the intended disjoint selected-particle half-sets. In the QC commands below,
   block; `rlnRandomSubset` labelling optional since the two files are separate). Then
   `train_opuset_fixed.slurm` with `FIXED_SUBSET_LABEL=1` and `=2` picks its half
   (env-overridable — must NOT be pinned in species.conf, or both jobs collide on subset 1).
-  Each → `fixed_subset<N>/`; the half-map is the mean of the per-rank `tmp*.mrc`.
+  Each → `fixed_subset<N>/`; use `tmp0.mrc` as the complete half-map; DDP ranks hold duplicate maps.
 - **Caveat — a changed selection MUST regenerate the fixed-mode pose pkl / deep_split.** Re-running
   fixed-mode for a NEW `sel_<label>.star` at the same TM_LABEL path would otherwise silently reuse
   the previous selection's pose pkl (different particle count) → `PoseTracker.load` asserts a shape
@@ -176,10 +176,10 @@ the intended disjoint selected-particle half-sets. In the QC commands below,
   regenerates the pose pkl and drops `deep_split.pkl` whenever the star is newer than them.
 - **Derive a molecule mask from the reconstruction** — NOT a sphere (a sphere induces a
   spurious high-frequency FSC rise): `gen_mask_from_map.py --half1 half1.mrc --half2 half2.mrc
-  -o mask.mrc` (threshold + largest connected component + soft cosine edge). This mask feeds
+  -o "$M_MASK"` (threshold + largest connected component + soft cosine edge). This mask feeds
   both the FSC and M refinement (`M_MASK`).
 - **Gold-standard FSC:** `compute_fsc.py --half1 half1.mrc --half2 half2.mrc
-  --apix <OUTPUT_ANGPIX> --mask mask.mrc -o fsc` → resolution at FSC=0.143 (report the FIRST
+  --apix <OUTPUT_ANGPIX> --mask "$M_MASK" -o fsc` → resolution at FSC=0.143 (report the FIRST
   crossing) + the FSC curve. By default it also applies the **phase-randomization correction**
   (RELION high-res noise substitution: randomize phases beyond the masked-FSC-0.8 shell,
   re-mask, subtract the mask-only correlation) and reports the *corrected* 0.143 resolution —
@@ -191,5 +191,5 @@ the intended disjoint selected-particle half-sets. In the QC commands below,
 - **M refinement** (`warp_m_*`, advanced.md) takes half1/half2 + mask + `sel.star` → refined
   tilt-series alignment + per-particle poses → higher-res map + `<species>_matching_refined.star`
   (input to the in-cell ArtiaX finale).
-- Persist: `artifacts.resolution_A`, `mask.mrc`, half-map paths, and the `refine` decision
+- Persist: `artifacts.resolution_A`, the `M_MASK` path, half-map paths, and the `refine` decision
   for next phase `M`.

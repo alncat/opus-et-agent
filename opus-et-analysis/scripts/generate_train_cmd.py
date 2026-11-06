@@ -149,7 +149,7 @@ def get_args_interactive():
     batch_size = input("Batch size [10]: ").strip() or "10"
     learning_rate = input("Learning rate [3.0e-5]: ").strip() or "3.0e-5"
     beta_control = input("Beta control (KL weight) [0.5]: ").strip() or "0.5"
-    lamb = input("Lambda (disentanglement) [0.5]: ").strip() or "0.5"
+    lamb = input("Lambda (UMAP/MMD regularization) [0.5]: ").strip() or "0.5"
     bfactor = input("B-factor [3.0]: ").strip() or "3.0"
     num_gpus = input("Number of GPUs [4]: ").strip() or "4"
     output_dir = input("Output directory [.]: ").strip() or "."
@@ -234,7 +234,7 @@ Examples:
     parser.add_argument('--batch-size', type=int, default=10, help='Batch size per GPU [10]')
     parser.add_argument('--lr', type=float, default=3e-5, help='Learning rate [3.0e-5]')
     parser.add_argument('--beta', type=float, default=0.5, help='KL divergence weight [0.5]')
-    parser.add_argument('--lamb', type=float, default=0.5, help='Disentanglement weight [0.5]')
+    parser.add_argument('--lamb', type=float, default=0.5, help='UMAP/MMD regularization weight [0.5]')
     parser.add_argument('--bfactor', type=float, default=3.0, help='B-factor sharpening [3.0]')
     parser.add_argument('--num-gpus', type=int, default=4, help='Number of GPUs [4]')
     parser.add_argument('--output-dir', default='.', help='Output directory [.]')

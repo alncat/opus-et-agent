@@ -358,7 +358,7 @@ The agent doesn't just execute — it **keeps the pipeline correct and improves 
 
 ## Tools built for this pipeline (all test-covered, TDD)
 
-Eleven analysis/QC/visualization tools were written for the gates above — **160 tests** in total,
+Eleven analysis/QC/visualization tools were written for the gates above — covered by numerical and rendering regression tests,
 all green. Grouped by the gate they serve:
 
 **Gate 1 — alignment QC**
@@ -390,7 +390,7 @@ all green. Grouped by the gate they serve:
   phase-randomization correction (strips mask-induced high-frequency correlation).
 
 **Gate 5 / finale — in-cell visualization**
-- **`gen_artiax_scene.py`** *(12 tests)* — emits the ArtiaX scene placing each refined map at
+- **`gen_artiax_scene.py`** — emits the ArtiaX scene placing each refined map at
   every particle pose inside its tomogram; supports **multi-species** scenes (per-particle-list
   map + contour) for the two-species finale.
 - **`particle_gallery.py`** *(20 tests)* — the inverse of the finale: instead of *replacing* the

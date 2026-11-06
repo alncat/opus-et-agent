@@ -180,7 +180,7 @@ ls -lh "${TM_WARP_DIR}"/*_warp.star 2>/dev/null | head -20
 echo ""
 echo "Next steps:"
 echo "  1. Export subtomograms with WARP:"
-echo "     sbatch scripts/warp_export_particles.slurm"
+echo "     sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_export_particles.slurm\""
 echo ""
 if [ "$FAILED" -gt 0 ]; then
     echo "ERROR: One or more tilt series failed conversion."

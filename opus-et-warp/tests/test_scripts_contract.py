@@ -123,7 +123,7 @@ def test_every_slurm_script_is_reachable():
     a manifest phase (the per-phase loop submits it), the gate protocols (a
     human-gate tool such as analyze_opuset / select_state, run at Gate 3
     rather than as a phase), or validate.sh itself (its built-in fallback for
-    the M sub-phases the manifest does not enumerate, e.g. Phase 8d)."""
+    the M sub-phases checked by validate.sh)."""
     listed = {s for spec in _manifest().values() for s in spec.get("scripts", [])}
     gate_tools = (SKILL.parent / "opus-et-conductor" / "references"
                   / "gate_protocols.md").read_text()

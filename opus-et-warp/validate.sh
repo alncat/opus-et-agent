@@ -7,6 +7,7 @@
 #   bash validate.sh --phase 1                # only Phase 1
 #   bash validate.sh --phase 6 --species species_ribo.conf  # Phase 6, specific species
 #   bash validate.sh --phase 7 --dry-run      # print commands, don't check paths
+#   bash validate.sh --config-only --json     # value checks for dashboard edits
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,6 +19,7 @@ WARNINGS=0
 PHASE=""
 SPECIES_CONF="${SPECIES_CONF:-$SCRIPT_DIR/species.conf}"
 DRY_RUN=0
+CONFIG_ONLY=0
 
 # --- parse args ---
 JSON_MODE=0
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
         --phase) PHASE="$2"; shift 2 ;;
         --species) SPECIES_CONF="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --config-only) CONFIG_ONLY=1; DRY_RUN=1; ASSUME_ENV=1; shift ;;
         --json) JSON_MODE=1; shift ;;
         --assume-env) ASSUME_ENV=1; shift ;;
         *) echo "Unknown: $1"; exit 2 ;;
@@ -393,6 +396,7 @@ fi
 # 2. Placeholder and manifest checks
 # =============================================================================
 banner "2. Placeholder and manifest checks"
+if [ "$CONFIG_ONLY" != "1" ]; then
 
 for conf_file in "$PIPELINE_CONF"; do
     if [ ! -f "$conf_file" ]; then
@@ -441,6 +445,8 @@ for s in $(phase_scripts "$PHASE"); do
         echo "$issues" | while read line; do echo "      $line"; done
     fi
 done
+
+fi # full preflight checks; config-only validates loaded values below
 
 # =============================================================================
 # 3. Environment paths (always needed)
@@ -567,7 +573,7 @@ echo "  TOMO_DIMS:        ${TOMO_DIM_X:-?} × ${TOMO_DIM_Y:-?} × ${TOMO_DIM_Z:-
 
 # If AreTomo output exists, show actual binned dims
 ali_sample=$(find "$TILTSTACK_DIR" -name "*_ali.mrc" -type f -print -quit 2>/dev/null)
-if [ -n "$ali_sample" ] && [ -f "$TILTSERIES_SETTINGS" ]; then
+if [ "$CONFIG_ONLY" != "1" ] && [ -n "$ali_sample" ] && [ -f "$TILTSERIES_SETTINGS" ]; then
     ali_files=()
     while IFS= read -r -d '' ali_file; do
         ali_files+=("$ali_file")
@@ -648,7 +654,7 @@ if need_species; then
         fi
     fi
     if [ -n "$TEMPLATERES" ] && [ -n "$SUBTOMO_BOX_SIZE" ] && [ "$TEMPLATERES" != "$SUBTOMO_BOX_SIZE" ]; then
-        warn "TEMPLATERES=$TEMPLATERES ≠ SUBTOMO_BOX_SIZE=$SUBTOMO_BOX_SIZE"
+        info "Decoder size TEMPLATERES=$TEMPLATERES differs from export box $SUBTOMO_BOX_SIZE; check decoder sizing and DOWNSAMPLE_FRAC"
     fi
 fi
 
@@ -764,7 +770,7 @@ if [ "$DRY_RUN" != "1" ]; then
             aln_done=0
             aln_tsv="$WORK_DIR/gate1_qc/alignment_metrics.tsv"
             if [ ! -f "$aln_tsv" ]; then
-                fail "Phase 3c alignment QC not run — sbatch scripts/warp_alignment_qc.slurm before importing alignments"
+                fail "Phase 3c alignment QC not run — sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_alignment_qc.slurm\" before importing alignments"
             else
                 aln_fail=$(awk -F'\t' 'NR > 1 && $2 != "pass" {print $1}' "$aln_tsv" | tr '\n' ' ')
                 aln_n=$(awk 'NR > 1' "$aln_tsv" | wc -l | tr -d ' ')
@@ -849,7 +855,7 @@ sys.exit(0 if valid else 1)
             geom_done=0
             geom_tsv="$WORK_DIR/gate1_qc/geometry_metrics.tsv"
             if [ ! -f "$geom_tsv" ]; then
-                fail "Phase 5c geometry QC not run — sbatch scripts/warp_geometry_qc.slurm before template matching"
+                fail "Phase 5c geometry QC not run — sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_geometry_qc.slurm\" before template matching"
             else
                 geom_fail=$(awk -F'\t' 'NR > 1 && $2 != "pass" {print $1}' "$geom_tsv" | tr '\n' ' ')
                 geom_n=$(awk 'NR > 1' "$geom_tsv" | wc -l | tr -d ' ')
@@ -939,7 +945,7 @@ fi
 # =============================================================================
 # 8. Dry-run command summary
 # =============================================================================
-if [ "$DRY_RUN" = "1" ]; then
+if [ "$DRY_RUN" = "1" ] && [ "$CONFIG_ONLY" != "1" ]; then
     banner "8. Dry-run — Phase ${PHASE:-all}"
     echo ""
     echo "  ── Configuration ──"
@@ -978,7 +984,7 @@ if [ "$DRY_RUN" = "1" ]; then
     echo ""
     echo "  ── Slurm submit commands ──"
     for s in $(phase_scripts "$PHASE"); do
-        echo "  sbatch --export=ALL,SKILL_DIR=\"\$(pwd)\" scripts/$s"
+        echo "  sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/$s\""
     done
     echo ""
     echo "  ── Key command preview ──"
@@ -1094,16 +1100,18 @@ echo ""
 
 if [ "$ERRORS" -eq 0 ]; then
     green "All checks passed."
-    if [ -n "$PHASE" ]; then
+    if [ "$CONFIG_ONLY" = "1" ]; then
+        echo "Configuration values checked; run full phase preflight before submission."
+    elif [ -n "$PHASE" ]; then
         echo ""
         echo "Next: submit Phase $PHASE:"
         for s in $(phase_scripts "$PHASE"); do
-            echo "  sbatch --export=ALL,SKILL_DIR=\"\$(pwd)\" scripts/$s"
+            echo "  sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/$s\""
         done
     else
         echo ""
         echo "Next: submit Phase 1:"
-        echo "  sbatch --export=ALL,SKILL_DIR=\"\$(pwd)\" scripts/warp_frameseries_import.slurm"
+        echo "  sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_frameseries_import.slurm\""
     fi
 else
     red "Fix $ERRORS error(s) before submitting."

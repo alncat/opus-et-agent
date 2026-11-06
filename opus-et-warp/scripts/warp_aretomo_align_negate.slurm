@@ -54,6 +54,7 @@ if [ ! -x "$ARETOMO_EXE" ]; then
 fi
 echo "AreTomo2: $ARETOMO_EXE"
 
+ulimit -v unlimited
 cd "$WORK_DIR" || exit 1
 echo "Working directory: $(pwd)"
 

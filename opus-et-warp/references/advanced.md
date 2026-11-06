@@ -15,14 +15,15 @@ After exporting particles from WARP, use MTools for iterative refinement.
 user-supplied paths). After M refinement, MCore writes species-prefixed half
 maps such as `<species>_half1.mrc` and `<species>_half2.mrc`. The skill can
 produce initial half maps by
-training **two OPUS-ET fixed-mode runs**, one on each half-set of the Phase 7
+training **two OPUS-ET fixed-mode runs**, one on each half-set of the Gate-3 selected
 particles:
 
 ```bash
-# 1. Split the Phase 7 STAR into the two halves (rlnRandomSubset = 1, 2)
-dsdsh convert_star warp_tiltseries/ribo_matching.star $OUTPUT_ANGPIX --subset-label 1
-dsdsh convert_star warp_tiltseries/ribo_matching.star $OUTPUT_ANGPIX --subset-label 2
-# → ribo_matching_subset1.star, ribo_matching_subset2.star
+# 1. Split the selected STAR into the two halves (rlnRandomSubset = 1, 2)
+dsdsh convert_star sel_ribo.star $OUTPUT_ANGPIX --subset-label 1
+dsdsh convert_star sel_ribo.star $OUTPUT_ANGPIX --subset-label 2
+# → sel_ribo_subset1.star, sel_ribo_subset2.star
+# Pass each via STAR_FILE_OVERRIDE with FIXED_SUBSET_LABEL=1 or 2.
 
 # 2. Train fixed-mode (encoder-free, single homogeneous average) on each half.
 #    See "OPUS-ET Subtomogram Averaging (Fixed Latent Code)" below for the
@@ -278,7 +279,7 @@ torchrun --nproc_per_node=4 -m cryodrgn.commands.train_tomo_dist \
     --lamb 0.5 \
     --bfactor 4. \
     --valfrac 0.0 \
-    --templateres 128 \
+    --templateres "$TEMPLATERES" \
     --tmp-prefix tmp \
     --datadir <warp_tiltseries> \
     --angpix "$OUTPUT_ANGPIX" \

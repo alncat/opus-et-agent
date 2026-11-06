@@ -637,7 +637,7 @@ phases:
       - opuset/${TM_LABEL}/fixed_subset${FIXED_SUBSET_LABEL}/weights.*.pkl
 
   8d:
-    description: "Prepare selected-particle half-maps and molecular mask for M"
+    description: "Prepare selected-particle half-maps for M (mask creation optional)"
     requires_species: true
     scripts:
       - prepare_m_halfmaps.slurm
@@ -651,7 +651,6 @@ phases:
     outputs:
       - opuset/${TM_LABEL}/half1.mrc
       - opuset/${TM_LABEL}/half2.mrc
-      - opuset/${TM_LABEL}/halfmap_mask.mrc
     pre_checks:
       - "Both selected-particle subset reconstructions have finished"
       - "Verify the discovered tmp0.mrc pair belongs to the intended disjoint half-sets"

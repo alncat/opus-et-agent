@@ -55,4 +55,4 @@ python "${SCRIPT_DIR}/scripts/warp_settings.py" update-from-mrc \
     "$TILTSERIES_SETTINGS" "${FRAMESERIES_DIR}.settings" \
     "$ALIGN_ANGPIX" "${ali_files[@]}" || exit 1
 
-echo "You may now run Phase 4: sbatch scripts/warp_import_alignments.slurm"
+echo "You may now run Phase 4: sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_import_alignments.slurm\""

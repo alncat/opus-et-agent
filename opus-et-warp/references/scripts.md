@@ -11,7 +11,7 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 | `warp_export_stacks.slurm` | Export tilt stacks for alignment | 64 GB |
 | `warp_aretomo_align_negate.slurm` | AreTomo2 with angle negation | 32 GB |
 | `warp_alignment_qc.slurm` | Phase 3c: per-tilt residual after applying AreTomo's `.xf` (`alignment_qc.py`) | 24 GB |
-| `warp_update_tomo_dims.slurm` | Re-run `create_settings` with UNBINNED dims from `_ali.mrc` (Phase 3.5) | 16 GB |
+| `warp_update_tomo_dims.slurm` | Update only UNBINNED dimensions in existing settings from `_ali.mrc` (Phase 3.5) | 16 GB |
 | `warp_import_alignments.slurm` | Import .xf/.tlt into WARP | 64 GB |
 | `warp_ts_ctf.slurm` | Defocus handedness check + CTF | 256 GB |
 | `warp_ts_reconstruct.slurm` | Tomogram reconstruction | 256 GB |
@@ -26,10 +26,10 @@ Moved verbatim from SKILL.md so the skill body stays an overview; this is the re
 | `warp_export_particles.slurm` | Export subtomograms | 128 GB |
 | `gen_training_mask.slurm` | Training mask | 16 GB |
 | `train_opuset.slurm` | Train OPUS-ET heterogeneity model (4 GPUs) | 256 GB |
-| `train_opuset_fixed.slurm` | Train OPUS-ET fixed-mode (encoder-free, homogeneous average; run twice on even/odd splits to produce M half-maps) | 256 GB |
-| `analyze_opuset.slurm` | Analyze latent states and reconstruct cluster maps | 32 GB |
+| `train_opuset_fixed.slurm` | Train OPUS-ET fixed-mode (encoder-free, homogeneous average; run twice on disjoint halves of the Gate-3 selected STAR to produce M half-maps) | 256 GB |
+| `analyze_opuset.slurm` | Analyze latent states and reconstruct cluster maps | 128 GB |
 | `select_state.slurm` | Inject refined poses and select states | 32 GB |
-| `prepare_m_halfmaps.slurm` | Prepare half-maps and mask for M | 32 GB |
+| `prepare_m_halfmaps.slurm` | Prepare half-maps and optionally a mask for M | 16 GB |
 | `warp_m_setup.slurm` | M refinement: create_population + create_source (one-shot) — `references/advanced.md` | 16 GB |
 | `warp_m_create_species.slurm` | M refinement: create_species (per species) | 64 GB |
 | `warp_m_update_mask.slurm` | M refinement: update_mask (between passes only — needs a completed refine first) | 32 GB |
@@ -61,8 +61,8 @@ Skill deployment files (shipped with the skill):
 ```
 scripts/                        # SLURM phase scripts (one per phase/sub-phase) + manifest.yml
                                 #   + Python helpers: tm_auto_mask.py, extract_candidates_parallel.py, format_slurm.py
-references/                     # advanced.md, gotchas.md, phases.md, workflow.md
-tests/                          # pytest — test_tm_auto_mask.py
+references/                     # settings, configuration, quickstart, phases, workflow, advanced, gotchas, scripts
+tests/                          # geometry, alignment QC, masks, script contracts, and script behavior
 validate.sh                     # Phase-aware pre-flight check (reads scripts/manifest.yml)
 pipeline.example.conf           # Copy to pipeline.conf and edit
 species.example.conf            # Copy to species.conf and edit (one per species)

@@ -121,12 +121,15 @@ sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/warp_export_parti
 # Verify in species.conf: TM_LABEL, ZDIM, NUM_EPOCHS, BATCH_SIZE,
 #   SUBTOMO_BOX_SIZE, TEMPLATERES, MASK_SOFT_EDGE, MASK_RADIUS_FRACTION
 # Verify in pipeline.conf: NUM_GPUS
-# For fixed-mode (Phase 8c): run dsdsh convert_star --subset-label 1 on the Phase 7 STAR first.
+# Before Phase 8c, complete Gate 3 and split the selected STAR into two disjoint halves
+# (see settings.md item 25); pass each half explicitly below.
 # Phase 8b auto-creates a fallback sphere mask if TRAINING_MASK_MRC is missing.
 sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/gen_training_mask.slurm"  # Phase 8a — optional explicit mask
 sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset.slurm"        # Phase 8b — heterogeneity
-sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset_fixed.slurm"   # Phase 8c — fixed half-maps
-sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/prepare_m_halfmaps.slurm"    # Phase 8d — link half-maps + mask
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=1,STAR_FILE_OVERRIDE=/absolute/path/sel_subset1.star "$SKILL_DIR/scripts/train_opuset_fixed.slurm"
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=2,STAR_FILE_OVERRIDE=/absolute/path/sel_subset2.star "$SKILL_DIR/scripts/train_opuset_fixed.slurm"
+# Wait for both jobs before Phase 8d; complete Gate 4 and create/verify M_MASK afterward.
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/prepare_m_halfmaps.slurm"    # Phase 8d — link half-maps; optional threshold mask
 ```
 
 **For detailed per-phase commands:** read `references/phases.md`

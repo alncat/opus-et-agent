@@ -54,7 +54,7 @@ WarpTools fs_ctf \
     --cs 2.7 \
     --grid 2x2x1 \
     --range_max $CTF_RANGE_MAX \
-    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX" \
+    --defocus_min "${CTF_DEFOCUS_MIN:?Set validated CTF_DEFOCUS_MIN before manual CTF}" --defocus_max "${CTF_DEFOCUS_MAX:?Set validated CTF_DEFOCUS_MAX before manual CTF}" \
     --perdevice 1
 ```
 No gain reference — assumed already applied to the averaged image.
@@ -82,7 +82,7 @@ WarpTools fs_motion_and_ctf \
     --c_range_max $CTF_RANGE_MAX \
     --c_voltage $CTF_VOLTAGE \
     --c_cs 2.7 \
-    --c_defocus_min "$CTF_DEFOCUS_MIN" --c_defocus_max "$CTF_DEFOCUS_MAX" \
+    --c_defocus_min "${CTF_DEFOCUS_MIN:?Set validated CTF_DEFOCUS_MIN before manual CTF}" --c_defocus_max "${CTF_DEFOCUS_MAX:?Set validated CTF_DEFOCUS_MAX before manual CTF}" \
     --c_use_sum \
     --out_averages \
     --out_average_halves \
@@ -114,7 +114,7 @@ WarpTools fs_motion_and_ctf \
     --c_range_max $CTF_RANGE_MAX \
     --c_voltage $CTF_VOLTAGE \
     --c_cs 2.7 \
-    --c_defocus_min "$CTF_DEFOCUS_MIN" --c_defocus_max "$CTF_DEFOCUS_MAX" \
+    --c_defocus_min "${CTF_DEFOCUS_MIN:?Set validated CTF_DEFOCUS_MIN before manual CTF}" --c_defocus_max "${CTF_DEFOCUS_MAX:?Set validated CTF_DEFOCUS_MAX before manual CTF}" \
     --c_use_sum \
     --out_averages \
     --out_average_halves \
@@ -199,7 +199,10 @@ What it does:
 4. Copies `.xf` transform file unchanged
 
 ### Manual AreTomo2 (single tilt series)
+Derive the binned Z dimensions first; adjust `ALIGN_Z` to measured specimen thickness and keep it below `VOL_Z`.
 ```bash
+VOL_Z=$((TOMO_DIM_Z / BINNING_FACTOR))
+ALIGN_Z=$((VOL_Z * 40 / 100))  # initial estimate; refine after inspecting XZ
 AreTomo2 \
     -InMrc TS_026.st \
     -OutMrc TS_026_ali.mrc \
@@ -330,7 +333,7 @@ WarpTools ts_ctf \
     --cs 2.7 \
     --window 512 \
     --range_high 7 \
-    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX" \
+    --defocus_min "${CTF_DEFOCUS_MIN:?Set validated CTF_DEFOCUS_MIN before manual CTF}" --defocus_max "${CTF_DEFOCUS_MAX:?Set validated CTF_DEFOCUS_MAX before manual CTF}" \
     --perdevice 1
 
 # Step 3: Reconstruct tomograms (32-bit float)
@@ -533,13 +536,15 @@ For homogeneous averaging — uses `--encode-mode fixed` to set z=0 for all part
 **SLURM:** `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/train_opuset_fixed.slurm"`. See `references/advanced.md`
 for full command and parameters.
 
-**Generating half maps for M refinement.** Split the Phase 7 STAR by
+**Generating half maps for M refinement.** Split the Gate-3 selected STAR by
 `rlnRandomSubset` and run fixed-mode once per subset:
 
 ```bash
-dsdsh convert_star <Phase 7 STAR> $OUTPUT_ANGPIX --subset-label 1
-dsdsh convert_star <Phase 7 STAR> $OUTPUT_ANGPIX --subset-label 2
+dsdsh convert_star <selected STAR> $OUTPUT_ANGPIX --subset-label 1
+dsdsh convert_star <selected STAR> $OUTPUT_ANGPIX --subset-label 2
 ```
+
+Pass each resulting STAR explicitly as `STAR_FILE_OVERRIDE` with `FIXED_SUBSET_LABEL=1` or `2`, respectively. Run Phase 8d after both reconstructions finish, then Gate 4 to create/verify `M_MASK`.
 
 The two resulting volumes are the `half1.mrc` / `half2.mrc` inputs to
 `warp_m_create_species.slurm`. See `references/advanced.md` →

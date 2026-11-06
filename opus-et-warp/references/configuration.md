@@ -21,6 +21,7 @@ vim pipeline.conf    # tilt-series-wide: paths, microscope, detector, cluster, b
 vim species.conf     # per-species: TM_LABEL, DIAMETER, box sizes, training params
 # Set both CTF_DEFOCUS_MIN and CTF_DEFOCUS_MAX to the validated search bounds.
 source "$SKILL_DIR/pipeline.conf"
+source "${SPECIES_CONF:-$SKILL_DIR/species.conf}"
 cd "$WORK_DIR"
 mkdir -p logs
 ```

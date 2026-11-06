@@ -64,7 +64,7 @@ WarpTools fs_ctf \
     --cs 2.7 \
     --grid 2x2x1 \
     --range_max 7 \
-    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX"
+    --defocus_min "${CTF_DEFOCUS_MIN:?Set validated CTF_DEFOCUS_MIN before manual CTF}" --defocus_max "${CTF_DEFOCUS_MAX:?Set validated CTF_DEFOCUS_MAX before manual CTF}"
 ```
 
 ### 1.4 (Alternative) Use SLURM Script for Frame Series
@@ -216,7 +216,7 @@ WarpTools ts_ctf \
     --cs 2.7 \
     --window 512 \
     --range_high 7 \
-    --defocus_min "$CTF_DEFOCUS_MIN" --defocus_max "$CTF_DEFOCUS_MAX"
+    --defocus_min "${CTF_DEFOCUS_MIN:?Set validated CTF_DEFOCUS_MIN before manual CTF}" --defocus_max "${CTF_DEFOCUS_MAX:?Set validated CTF_DEFOCUS_MAX before manual CTF}"
 ```
 
 **SLURM script** (includes defocus handedness check):
@@ -370,7 +370,7 @@ Required flags for OPUS-ET compatibility:
 > pixel-size suffix; it does **not** encode the species/`TM_LABEL` or the box size. A different
 > `--output_star` gives you a separate STAR that still points back into the *same* shared
 > `subtomo/` tree — it does **not** give you a separate set of density files. Every re-export
-> therefore overwrites what is on disk. Three silent-corruption traps:
+> overwrites matching files if run directly. `warp_export_particles.slurm` refuses existing particles by default; `ABORT_ON_EXISTING_SUBTOMO=0` explicitly bypasses that guard. The following risks apply to direct/overridden exports and M re-export:
 >
 > 1. **Second species at the same `OUTPUT_ANGPIX`.** Exporting FAS at the ribo pixel size drops
 >    `TS_XXX_00000_<angpix>A.mrc …` on top of the ribosome subtomos; the ribo STAR now points at
@@ -503,7 +503,18 @@ Each averages its half → `opuset/<TM_LABEL>/fixed_subset<N>/`. `FIXED_SUBSET_L
 env-overridable (must not be pinned in `species.conf`, or both jobs collide on subset 1).
 Each subset's **`tmp0.mrc` is already its complete half-map**; DDP ranks hold duplicate maps, not independent half-maps.
 
-### 8.6b Resolution QC (molecule mask + gold-standard FSC)
+### 8.6b Prepare half-maps (Phase 8d)
+After both fixed-mode jobs finish:
+```bash
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/prepare_m_halfmaps.slurm"
+```
+The default pair is `opuset/$TM_LABEL/fixed_subset{1,2}/tmp0.mrc`. For another run,
+set `M_INPUT_HALF1` and `M_INPUT_HALF2` in the species config to the intended
+disjoint subset outputs. Verify their provenance before proceeding. Phase 8d
+links them to `M_HALF1`/`M_HALF2`'s standard paths; its optional threshold mask
+is skipped when `M_HALFMAP_THRESHOLD` is blank. Gate 4 below creates `M_MASK`.
+
+### 8.6c Resolution QC (molecule mask + gold-standard FSC)
 Derive a mask that follows the density (a **sphere induces a spurious high-frequency FSC
 rise**), then measure resolution:
 ```bash
@@ -511,14 +522,14 @@ rise**), then measure resolution:
 # --qc also writes a mask–density overlay PNG (3 orthogonal slices, mask envelope outlined) so
 # the checkpoint *shows* the mask wraps the molecule without clipping (Gate-4 / pre-M QC)
 python opus-et-analysis/scripts/gen_mask_from_map.py \
-    --half1 opuset/<TM_LABEL>/fixed_subset1/tmp0.mrc \
-    --half2 opuset/<TM_LABEL>/fixed_subset2/tmp0.mrc -o mask.mrc \
+    --half1 "$M_HALF1" \
+    --half2 "$M_HALF2" -o "$M_MASK" \
     --qc <TM_LABEL>_mask_overlay.png
 # masked gold-standard FSC — report the FIRST 0.143 crossing (a rise after it is a mask artifact)
 python opus-et-analysis/scripts/compute_fsc.py \
-    --half1 opuset/<TM_LABEL>/fixed_subset1/tmp0.mrc \
-    --half2 opuset/<TM_LABEL>/fixed_subset2/tmp0.mrc \
-    --apix <OUTPUT_ANGPIX> --mask mask.mrc -o fsc
+    --half1 "$M_HALF1" \
+    --half2 "$M_HALF2" \
+    --apix <OUTPUT_ANGPIX> --mask "$M_MASK" -o fsc
 ```
 By default `compute_fsc.py` also applies the **phase-randomization correction** (RELION
 high-resolution noise substitution): it randomizes phases beyond the shell where the masked
@@ -529,7 +540,7 @@ Pass `--no-phase-randomize` for the raw masked curve, or `--rand-res <Å>` to se
 The exact high-frequency behaviour is not critical here — only a **low-resolution** map is
 imported into **M**, which refines from there.
 
-`mask.mrc` + the two half-maps feed **M refinement** (`warp_m_*`, advanced.md), which refines
+`M_MASK` + the two half-maps feed **M refinement** (`warp_m_*`, advanced.md), which refines
 tilt-series alignment + poses to push resolution toward Nyquist.
 
 ### 8.7 Warm-start / add more particles (optional, no full retrain)
@@ -636,6 +647,9 @@ sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/analyze_opuset.sl
 sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",SELECT_CLUSTERS="..." "$SKILL_DIR/scripts/select_state.slurm"  # 8.5 sel star (refined poses)
 sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=1 "$SKILL_DIR/scripts/train_opuset_fixed.slurm"  # 8.6 half1
 sbatch --export=ALL,SKILL_DIR="$SKILL_DIR",FIXED_SUBSET_LABEL=2 "$SKILL_DIR/scripts/train_opuset_fixed.slurm"  # 8.6 half2
+# Wait for both half-map jobs, then Phase 8d:
+sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/prepare_m_halfmaps.slurm"
+# Gate 4: create/verify M_MASK and measure FSC before M refinement.
 ```
 
 ## File Organization
@@ -686,8 +700,8 @@ project/                              # = $WORK_DIR
 │   └── <TM_LABEL>/                   # Phase 6: one namespace per species/template
 │       ├── jobs/TS_XXX/             # PyTOM TM job dirs
 │       │   ├── job.xml               # PyTom job config
-│       │   ├── scores_<TM_LABEL>.em  # correlation scores
-│       │   └── angles_<TM_LABEL>.em  # orientation angles
+│       │   ├── scores_<TEMPLATE>.em  # correlation scores
+│       │   └── angles_<TEMPLATE>.em  # orientation angles
 │       ├── particles/                # extracted candidates
 │       │   ├── TS_XXX_particles.xml  # per-TS particle list (PyTom XML)
 │       │   └── TS_XXX_extraction.log

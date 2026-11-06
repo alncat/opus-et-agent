@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Exclude query particles nearest to reference picks within a physical radius."""
+"""Exclude every query particle within a physical radius of a reference pick."""
 import argparse
 import math
 from pathlib import Path
 import pickle
+import warnings
+
+from scipy.spatial import cKDTree
 
 import numpy as np
 import pandas as pd
@@ -23,20 +26,23 @@ def read_particles(path):
 
 
 def exclude_particles(reference, query, angpix, distance=136.0):
-    """Preserve query rows/columns, excluding the nearest hit per reference pick."""
+    """Preserve query rows/columns, excluding every hit within the radius of any reference pick."""
     if not all(math.isfinite(v) and v > 0 for v in (angpix, distance)):
         raise ValueError('angpix and distance must be positive and finite')
     keep = np.ones(len(query), dtype=bool)
+    if len(query) and not set(reference['rlnMicrographName']) & set(query['rlnMicrographName']):
+        warnings.warn('No shared micrograph names; query is unchanged. Check naming conventions.',
+                      UserWarning, stacklevel=2)
     for mic in query['rlnMicrographName'].unique():
         positions = reference.loc[reference['rlnMicrographName'] == mic, COORDS].to_numpy()
         indices = np.flatnonzero((query['rlnMicrographName'] == mic).to_numpy())
         if not len(positions):
             continue
         candidates = query.iloc[indices][COORDS].to_numpy()
-        dist2 = ((positions[:, None, :] - candidates[None, :, :]) ** 2).sum(axis=-1)
-        nearest = dist2.argmin(axis=1)
-        matched = dist2[np.arange(len(positions)), nearest] < (distance / angpix) ** 2
-        keep[indices[nearest[matched]]] = False
+        # Query-to-reference nearest distance removes ALL overlapping query picks
+        # without allocating the full reference-by-query distance matrix.
+        nearest_distance, _ = cKDTree(positions).query(candidates)
+        keep[indices[nearest_distance < distance / angpix]] = False
     return query.iloc[np.flatnonzero(keep)].reset_index(drop=True)
 
 

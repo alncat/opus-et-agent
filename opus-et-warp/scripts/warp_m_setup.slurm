@@ -62,4 +62,4 @@ MTools create_source \
 --processing_settings "$TILTSERIES_SETTINGS"
 
 echo ""
-echo "Done. Next: sbatch scripts/warp_m_create_species.slurm (per species)."
+echo "Done. Next: sbatch --export=ALL,SKILL_DIR=\"$SCRIPT_DIR\" \"$SCRIPT_DIR/scripts/warp_m_create_species.slurm\" (per species)."

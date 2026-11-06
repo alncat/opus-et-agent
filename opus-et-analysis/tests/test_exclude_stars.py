@@ -41,3 +41,26 @@ def test_cli_writes_disjoint_query_without_index_columns(tmp_path):
     data = starfile.read(tmp_path / 'query_exclude.star')
     assert data['rlnCoordinateX'].tolist() == [1., 2.]
     assert 'index' not in data and 'rlnOriginX' in data
+
+
+def test_all_overlaps_removed_without_crossing_tomograms():
+    ref = particles('A', [0., 10.])
+    query = pd.concat([particles('A', [0., 10., 40., 50.]), particles('B', [0.])], ignore_index=True)
+    result = mod.exclude_particles(ref, query, 4.2)
+    assert list(zip(result.rlnMicrographName, result.rlnCoordinateX)) == [('A', 50.), ('B', 0.)]
+
+
+def test_no_shared_names_warns():
+    with pytest.warns(UserWarning, match='No shared micrograph'):
+        assert len(mod.exclude_particles(particles('TS', [0.]), particles('TS.tomostar', [0.]), 4.2)) == 1
+
+
+def test_cli_config_distance_and_output(tmp_path):
+    import pickle
+    ref, query, output = [tmp_path / n for n in ('ref.star', 'query.star', 'filtered.star')]
+    starfile.write(particles('A', [0.]), ref)
+    starfile.write(particles('A', [1., 3., 5.]), query)
+    config = tmp_path / 'config.pkl'
+    config.write_bytes(pickle.dumps({'model_args': {'Apix': 8.4}, 'dataset_args': {'downfrac': 0.5}}))
+    assert mod.main([str(ref), str(query), '--config', str(config), '--distance', '13', '-o', str(output)]) == 0
+    assert starfile.read(output).rlnCoordinateX.tolist() == [5.]
