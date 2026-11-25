@@ -86,6 +86,12 @@ echo ""
 # This ensures split file, logs, and pose pickle are created in the correct location
 mkdir -p "${OUTPUT_DIR}"
 cd "${OUTPUT_DIR}" || { echo "ERROR: Cannot cd to ${OUTPUT_DIR}"; exit 1; }
+# Two jobs sharing this output directory cannot produce attributable half-maps.
+if ! mkdir .fixed-training.lock; then
+    echo "ERROR: fixed-mode output directory locked; verify that the previous job ended before clearing a stale lock." >&2
+    exit 1
+fi
+trap 'rmdir .fixed-training.lock' EXIT
 echo "Working directory: $(pwd)"
 echo ""
 
@@ -307,6 +313,10 @@ echo "      --tilt-step ${TILT_STEP} \\"
 echo "      --checkpoint 10"
 echo ""
 
+# Bind the actual successful reconstruction to the STAR consumed by torchrun.
+star_digest=$(sha256sum < "$STAR_FILE") || exit 1
+map_before=$(python "$SCRIPT_DIR/scripts/halfmap_inputs.py" fingerprint tmp0.mrc) || exit 1
+
 torchrun --nproc_per_node=${NUM_GPUS} -m cryodrgn.commands.train_tomo_dist \
 "${STAR_FILE}" \
 --poses "${POSE_PKL}" \
@@ -347,6 +357,13 @@ echo "============================================================"
 echo ""
 
 if [ $EXIT_CODE -eq 0 ]; then
+    map_after=$(python "$SCRIPT_DIR/scripts/halfmap_inputs.py" fingerprint tmp0.mrc) || exit 1
+    if [ ! -s tmp0.mrc ] || [ "$map_after" = "$map_before" ]; then
+        echo "ERROR: fixed-mode training produced no fresh tmp0.mrc." >&2
+        exit 1
+    fi
+    python "$SCRIPT_DIR/scripts/halfmap_inputs.py" record tmp0.mrc "$STAR_FILE" \
+        "$(dirname "$DATADIR")" "${star_digest%% *}" || exit 1
     echo "Status: SUCCESS"
     echo ""
     echo "Output files:"

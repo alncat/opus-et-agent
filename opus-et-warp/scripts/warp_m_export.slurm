@@ -43,10 +43,14 @@ ulimit -v unlimited
 
 cd "$WORK_DIR" || exit 1
 
+shopt -s nullglob
 if [ -d "${M_DIR}/species/${SPECIES_BASE}" ]; then
     SPECIES_DIRS=("${M_DIR}/species/${SPECIES_BASE}")
 else
-    mapfile -t SPECIES_DIRS < <(find "${M_DIR}/species" -maxdepth 1 -type d -name "${SPECIES_BASE}_*" 2>/dev/null | sort)
+    SPECIES_DIRS=()
+    for candidate in "${M_DIR}/species/${SPECIES_BASE}_"*; do
+        [ -d "$candidate" ] && SPECIES_DIRS+=("$candidate")
+    done
 fi
 if [ ${#SPECIES_DIRS[@]} -eq 0 ]; then
     echo "ERROR: species '$SPECIES_BASE' not found under ${M_DIR}/species/"
@@ -60,6 +64,9 @@ if [ ${#SPECIES_DIRS[@]} -gt 1 ]; then
     exit 1
 fi
 
+source "$SCRIPT_DIR/scripts/export_guard.sh" || exit 1
+lock_export_target || exit 1
+
 SPECIES_DIR="${SPECIES_DIRS[0]}"
 SPECIES_NAME=$(basename "$SPECIES_DIR")
 if [ -z "$OUTPUT_STAR" ]; then
@@ -69,7 +76,7 @@ fi
 # -----------------------------------------------------------------------------
 # Step 1: convert each <species>_particles.star (WARP) → _relion.star (RELION)
 # -----------------------------------------------------------------------------
-mapfile -t PARTICLES_STARS < <(ls "${SPECIES_DIR}"/*_particles.star 2>/dev/null)
+PARTICLES_STARS=("${SPECIES_DIR}"/*_particles.star)
 if [ ${#PARTICLES_STARS[@]} -eq 0 ]; then
     echo "ERROR: no *_particles.star under $SPECIES_DIR — has refinement run yet?"
     exit 1
@@ -87,21 +94,18 @@ fi
 for ps in "${PARTICLES_STARS[@]}"; do
     out="${ps%.star}_relion.star"
     echo "Converting: $(basename "$ps") -> $(basename "$out")"
-    rm -f "$out"
-    dsdsh convert_warp "$ps" "$COORDS_ANGPIX"
+    rm -f "$out" || exit 1
+    dsdsh convert_warp "$ps" "$COORDS_ANGPIX" || exit $?
     if [ ! -s "$out" ]; then
         echo "ERROR: convert_warp did not write $out"
         exit 1
     fi
 done
 
-# Sanity check the converted files exist
-if ! ls "${SPECIES_DIR}"/${INPUT_PATTERN} >/dev/null 2>&1; then
-    echo "ERROR: convert_warp did not produce $INPUT_PATTERN under $SPECIES_DIR"
-    exit 1
-fi
-
-mkdir -p "$(dirname "$OUTPUT_STAR")"
+mkdir -p "$(dirname "$OUTPUT_STAR")" || exit 1
+# Stage beside the final STAR so relative particle paths keep their meaning.
+export_star_tmp="$(dirname "$OUTPUT_STAR")/.refined-${SLURM_JOB_ID:-local}-$$.star"
+[ ! -e "$export_star_tmp" ] || exit 1
 
 # -----------------------------------------------------------------------------
 # Step 2: re-export subtomograms with the converted STAR
@@ -128,7 +132,7 @@ echo "  coords_angpix:  $COORDS_ANGPIX A"
 --settings "$TILTSERIES_SETTINGS" \
 --input_directory "$SPECIES_DIR" \
 --input_pattern "$INPUT_PATTERN" \
---output_star "$OUTPUT_STAR" \
+--output_star "$export_star_tmp" \
 --output_angpix "$OUTPUT_ANGPIX" \
 --box "$SUBTOMO_BOX_SIZE" \
 --diameter "$DIAMETER" \
@@ -136,7 +140,13 @@ echo "  coords_angpix:  $COORDS_ANGPIX A"
 --3d \
 --coords_angpix "$COORDS_ANGPIX" \
 --output_ctf_csv \
---dont_correct_ctf_3d
+--dont_correct_ctf_3d || { rc=$?; rm -f "$export_star_tmp"; exit "$rc"; }
+if [ ! -s "$export_star_tmp" ]; then
+    echo "ERROR: WarpTools produced no refined STAR." >&2
+    rm -f "$export_star_tmp"
+    exit 1
+fi
+mv -f "$export_star_tmp" "$OUTPUT_STAR" || exit 1
 
 echo ""
 echo "Done. Refined export complete for $SPECIES_NAME."

@@ -2261,7 +2261,7 @@ def validation_cmd(work_dir, pipeline_conf_path, remote_init=""):
     """Run validation against the dashboard's selected config, forwarding extra args."""
     command = (f"cd {shlex.quote(work_dir)} && "
                f"PIPELINE_CONF={shlex.quote(pipeline_conf_path)} "
-               'bash opus-et-warp/validate.sh --json --config-only "$@"')
+               'bash opus-et-warp/validate.sh --json "$@"')
     if remote_init:
         command = f"{remote_init} && {command}"
     return ["sh", "-c", command, "_"]
@@ -2384,7 +2384,7 @@ def main(argv=None):
         client,
         species_conf_path=f"{wd}/opus-et-warp/{args.species_conf}",
         pipeline_conf_path=pipeline_conf_path,
-        validate_cmd=validate_cmd,
+        validate_cmd=validate_cmd + ["--config-only"],
         expects_json=True,
     )
 

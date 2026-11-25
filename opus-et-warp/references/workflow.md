@@ -370,7 +370,7 @@ Required flags for OPUS-ET compatibility:
 > pixel-size suffix; it does **not** encode the species/`TM_LABEL` or the box size. A different
 > `--output_star` gives you a separate STAR that still points back into the *same* shared
 > `subtomo/` tree — it does **not** give you a separate set of density files. Every re-export
-> overwrites matching files if run directly. `warp_export_particles.slurm` refuses existing particles by default; `ABORT_ON_EXISTING_SUBTOMO=0` explicitly bypasses that guard. The following risks apply to direct/overridden exports and M re-export:
+> overwrites matching files if run directly. `warp_export_particles.slurm` refuses existing particles by default; `ABORT_ON_EXISTING_SUBTOMO=0` explicitly bypasses that guard. The M re-export uses the same destination lock and overwrite guard. The following risks apply to direct or explicitly overridden exports:
 >
 > 1. **Second species at the same `OUTPUT_ANGPIX`.** Exporting FAS at the ribo pixel size drops
 >    `TS_XXX_00000_<angpix>A.mrc …` on top of the ribosome subtomos; the ribo STAR now points at
@@ -510,7 +510,7 @@ sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/prepare_m_halfmap
 ```
 The default pair is `opuset/$TM_LABEL/fixed_subset{1,2}/tmp0.mrc`. For another run,
 set `M_INPUT_HALF1` and `M_INPUT_HALF2` in the species config to the intended
-disjoint subset outputs. Verify their provenance before proceeding. Phase 8d
+disjoint subset outputs. Fixed-mode training writes a checksum record beside each map. Phase 8d verifies both maps and their training STARs and rejects overlapping particle image IDs. For legacy maps supply the original training STARs via M_INPUT_STAR1/2 and use the original DATADIR for relative particle paths. Phase 8d
 links them to `M_HALF1`/`M_HALF2`'s standard paths; its optional threshold mask
 is skipped when `M_HALFMAP_THRESHOLD` is blank. Gate 4 below creates `M_MASK`.
 

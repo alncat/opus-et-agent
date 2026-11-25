@@ -343,6 +343,8 @@ def update_dimensions(settings, frames, alignment_angpix, dims):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest='command', required=True)
+    folder = sub.add_parser('processing-folder')
+    folder.add_argument('settings')
     s = sub.add_parser('sampling')
     s.add_argument('frames')
     c = sub.add_parser('check')
@@ -414,6 +416,8 @@ def main():
             print(check_hand(args.settings, args.expected))
         elif args.command == 'tm-coordinate-factor':
             print('{:.10g}'.format(tm_coordinate_factor(args.particle_xml, args.coords_angpix)))
+        elif args.command == 'processing-folder':
+            print(processing_folder(args.settings).resolve())
         elif args.command == 'sampling':
             print('{:.10g} {:.10g}'.format(*sampling(args.frames)))
         elif args.command == 'check':

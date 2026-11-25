@@ -81,8 +81,11 @@ fi
 echo ""
 echo "Linking half-maps to standardized names..."
 
-ln -sf "$(realpath "$HALF1")" "$HALFMAP_BASE/half1.mrc"
-ln -sf "$(realpath "$HALF2")" "$HALFMAP_BASE/half2.mrc"
+python "$SCRIPT_DIR/scripts/halfmap_inputs.py" check "$HALF1" "$HALF2" \
+    "$(dirname "$DATADIR")" --star1 "${M_INPUT_STAR1:-}" --star2 "${M_INPUT_STAR2:-}" || exit 1
+mkdir -p "$HALFMAP_BASE" || exit 1
+ln -sf "$(realpath "$HALF1")" "$HALFMAP_BASE/half1.mrc" || exit 1
+ln -sf "$(realpath "$HALF2")" "$HALFMAP_BASE/half2.mrc" || exit 1
 
 echo "  half1.mrc → $HALF1"
 echo "  half2.mrc → $HALF2"

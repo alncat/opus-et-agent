@@ -25,7 +25,7 @@ def test_validation_uses_selected_pipeline_conf_and_forwards_species(tmp_path):
     cmd = status_server.validation_cmd(str(tmp_path), str(selected))
     proc = subprocess.run(cmd + ['--species', 'species_ribo.conf'], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.splitlines() == [str(selected), '--json', '--config-only', '--species', 'species_ribo.conf']
+    assert proc.stdout.splitlines() == [str(selected), '--json', '--species', 'species_ribo.conf']
 
 
 class StubEditor:
@@ -1285,3 +1285,39 @@ def test_attention_tolerates_null_phases():
     from types import SimpleNamespace
     snapshot = {'run_state': SimpleNamespace(data={'phases': None})}
     assert status_server.build_attention(snapshot, [], [], []) == []
+
+
+def test_dashboard_poll_reads_completion_and_editor_uses_config_only(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    script = tmp_path / 'opus-et-warp' / 'validate.sh'
+    script.parent.mkdir()
+    script.write_text('''if [[ " $* " == *" --config-only "* ]]; then
+echo '{"errors":0,"checks":[]}'
+else
+echo '{"errors":0,"checks":[{"status":"phase_completion","phase":"7","done":2,"total":2}]}'
+fi
+''')
+
+    def run(cmd, timeout):
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        return SimpleNamespace(rc=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+
+    monkeypatch.setattr(status_server.cluster, 'ClusterClient', lambda host: SimpleNamespace(run=run))
+    class Poll:
+        def __init__(self, fetchers, ttls):
+            self.fetch = fetchers['validate']
+
+        def start(self):
+            assert self.fetch()['7']['completion'] == 'done'
+
+    class WiringChecked(Exception):
+        pass
+
+    def editor(client, **kw):
+        assert json.loads(client.run(kw['validate_cmd'], timeout=180).stdout)['checks'] == []
+        raise WiringChecked
+
+    monkeypatch.setattr(status_server.poller_mod, 'Poller', Poll)
+    monkeypatch.setattr(status_server.config_edit, 'ConfigEditor', editor)
+    with pytest.raises(WiringChecked):
+        status_server.main(['--host', 'local-fixture', '--work-dir', str(tmp_path)])

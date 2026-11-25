@@ -21,6 +21,7 @@ def executable(path, body):
 def run_script(tmp_path, name, values, extra=None):
     conf = tmp_path / 'skill'
     conf.mkdir()
+    (conf / "scripts").symlink_to(SCRIPTS, target_is_directory=True)
     (conf / 'pipeline.conf').write_text('\n'.join(
         f'{key}={shlex.quote(str(value))}' for key, value in values.items()) + '\n')
     (conf / 'species.conf').write_text('# test species\n')
@@ -51,7 +52,7 @@ def test_export_refuses_existing_particles_unless_explicitly_overridden(tmp_path
     picks.mkdir()
     (picks / 'TS_1_warp.star').write_text('data_\n')
     settings = tmp_path / 'tilt.settings'
-    settings.touch()
+    settings.write_text(f'<Settings><Import><Param Name="ProcessingFolder" Value="{processing}"/></Import></Settings>')
     tools = tmp_path / 'tools'
     tools.mkdir()
     values = dict(WORK_DIR=tmp_path, PROCESSING_DIR=processing, TM_WARP_DIR=picks,
@@ -127,9 +128,12 @@ def test_halfmaps_use_explicit_pair_and_reject_identical_inputs(tmp_path, same_f
     bindir = tmp_path / 'bin'
     bindir.mkdir()
     executable(bindir / 'dsdsh', '#!/bin/bash\nexit 0\n')
+    star1, star2 = maps / 'one.star', maps / 'two.star'
+    for path, particle in [(star1, 'a.mrc'), (star2, 'b.mrc')]:
+        starfile.write(pd.DataFrame({'rlnImageName': [particle]}), path)
     proc = run_script(tmp_path, 'prepare_m_halfmaps.slurm',
                       dict(WORK_DIR=tmp_path, TM_LABEL='ribo', M_INPUT_HALF1=one,
-                           M_INPUT_HALF2=one if same_file else two))
+                           M_INPUT_HALF2=one if same_file else two, M_INPUT_STAR1=star1, M_INPUT_STAR2=star2))
     assert (proc.returncode == 0) == (not same_file), proc.stdout + proc.stderr
     if not same_file:
         assert (base / 'half1.mrc').resolve() == one
@@ -159,3 +163,94 @@ def test_config_only_checks_values_without_requiring_pipeline_outputs(tmp_path, 
     assert (data['errors'] == 0) == (voltage == 200), data
     assert (proc.returncode == 0) == (voltage == 200), proc.stderr
     assert not any(c['status'] == 'phase_completion' for c in data['checks'])
+
+
+@pytest.mark.parametrize('scenario', ['protected', 'intentional', 'failed', 'missing_output'])
+def test_refined_export(tmp_path, scenario):
+    run = tmp_path
+    species = run / 'm/species/ribo'
+    species.mkdir(parents=True)
+    (species / 'ribo_particles.star').write_text('picks')
+    processing = run / 'actual'
+    sub = processing / 'subtomo'
+    sub.mkdir(parents=True)
+    particle = sub / 'old.mrc'
+    particle.write_bytes(b'original')
+    settings = run / 'ts.settings'
+    settings.write_text('<Settings><Import><Param Name="ProcessingFolder" Value="actual"/></Import></Settings>')
+    bindir = run / 'bin'
+    bindir.mkdir()
+    executable(bindir / 'dsdsh', '#!/bin/bash\necho converted > "${2%.star}_relion.star"\n')
+    executable(bindir / 'WarpTools', '''#!/bin/bash
+touch called
+while [ "$1" != --output_star ]; do shift; done
+if [ "$SCENARIO" != missing_output ]; then echo refined > "$2"; fi
+if [ "$SCENARIO" = failed ]; then exit 19; fi
+''')
+    output = run / 'configured/ribo_matching_refined.star'
+    output.parent.mkdir()
+    output.write_text('old star')
+    proc = run_script(run, 'warp_m_export.slurm', dict(WORK_DIR=run, WARP_DIR=bindir,
+                      SPECIES_BASE='ribo', PROCESSING_DIR=output.parent, TILTSERIES_SETTINGS=settings),
+                      {'SCENARIO': scenario, 'ABORT_ON_EXISTING_SUBTOMO': '1' if scenario == 'protected' else '0'})
+    assert (run / 'called').exists() == (scenario != 'protected'), proc.stdout + proc.stderr
+    assert (proc.returncode == 0) == (scenario == 'intentional'), proc.stderr
+    if scenario == 'failed':
+        assert proc.returncode == 19
+    assert output.read_text().strip() == ('refined' if scenario == 'intentional' else 'old star')
+    assert particle.read_bytes() == b'original'
+    assert not (processing / '.subtomo-export.lock').exists()
+
+
+def test_recorded_halfmaps_verify_training_inputs_before_linking(tmp_path):
+    import hashlib
+    helper = str(SCRIPTS / 'halfmap_inputs.py')
+    volumes = []
+    for i, ids in enumerate([['1@stack.mrc', '1@stack.mrc'], ['2@stack.mrc']]):
+        star, volume = tmp_path / f'{i}.star', tmp_path / f'{i}.mrc'
+        volumes.append(volume)
+        starfile.write(pd.DataFrame({'rlnImageName': ids}), star)
+        volume.write_bytes(f'half {i}'.encode())
+        subprocess.run([sys.executable, helper, 'record', volume, star, tmp_path,
+                        hashlib.sha256(star.read_bytes()).hexdigest()], check=True)
+    def check():
+        return subprocess.run([sys.executable, helper, 'check', *volumes, tmp_path],
+                              capture_output=True, text=True)
+    assert check().returncode == 0
+    volumes[0].write_bytes(b'new map')
+    assert check().returncode != 0
+    volumes[0].write_bytes(b'half 0')
+    starfile.write(pd.DataFrame({'rlnImageName': ['000001@./stack.mrc']}), star, overwrite=True)
+    assert check().returncode != 0
+    subprocess.run([sys.executable, helper, 'record', volume, star, tmp_path,
+                    hashlib.sha256(star.read_bytes()).hexdigest()], check=True)
+    assert 'shared particle' in check().stderr
+
+
+@pytest.mark.parametrize('fresh', [False, True])
+def test_fixed_mode_records_only_fresh_successful_map(tmp_path, fresh):
+    import json
+    datadir = tmp_path / 'subtomo'
+    datadir.mkdir()
+    out = tmp_path / 'fixed'
+    out.mkdir()
+    star = tmp_path / 'subset.star'
+    starfile.write(pd.DataFrame({'rlnImageName': ['subtomo/p.mrc']}), star)
+    (out / 'subset_pose.pkl').touch()
+    (out / 'tmp0.mrc').write_bytes(b'previous')
+    mask = tmp_path / 'mask.mrc'
+    mask.touch()
+    bindir = tmp_path / 'bin'
+    bindir.mkdir()
+    executable(bindir / 'torchrun', '#!/bin/bash\n' + ('echo trained > tmp0.mrc\n' if fresh else ':\n'))
+    proc = run_script(tmp_path, 'train_opuset_fixed.slurm',
+                      dict(WORK_DIR=tmp_path, OUTPUT_DIR_OVERRIDE=out, STAR_FILE_OVERRIDE=star,
+                           OUTPUT_ANGPIX=4.2, DATADIR=datadir, TRAINING_MASK_MRC=mask,
+                           TILT_RANGE=60, TILT_STEP=3))
+    assert (proc.returncode == 0) == fresh, proc.stdout + proc.stderr
+    receipt = out / 'tmp0.mrc.inputs.json'
+    assert receipt.exists() == fresh
+    if fresh:
+        assert Path(json.loads(receipt.read_text())['star']) == star
+        assert (out / 'tmp0.mrc').read_bytes() == b'trained\n'
+    assert not (out / '.fixed-training.lock').exists()
