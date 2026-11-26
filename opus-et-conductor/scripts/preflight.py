@@ -5,8 +5,12 @@ Probes what it can and reports what is missing. External calls go through an
 injected ``run``/``which`` so the module is fully unit-testable without a cluster.
 The conductor (Claude) asks the user for anything in ``missing``.
 """
+import argparse
+import json
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 
 def _default_run(cmd):
@@ -90,3 +94,55 @@ def probe(known=None, run=_default_run, which=shutil.which):
 
     env["discovered"] = len(missing) == 0
     return {"environment": env, "cluster": cluster, "missing": missing}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Probe cluster environment, conda envs, tools, and SLURM partitions."
+    )
+    ap.add_argument("--warp-dir", default=None, help="Path to WARP bin dir (alncat fork)")
+    ap.add_argument("--warp-env", default=None, help="WARP conda env name")
+    ap.add_argument("--opuset-env", default=None, help="OPUS-ET conda env name")
+    ap.add_argument("--pytom-env", default=None, help="PyTOM conda env name")
+    ap.add_argument(
+        "--work-dir",
+        default=None,
+        help="Persist environment/cluster/preflight results to <work-dir>/.opus_run_state.json",
+    )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit 1 if any required tool, env, or partition is missing",
+    )
+    args = ap.parse_args(argv)
+    known = {
+        k: v
+        for k, v in {
+            "warp_dir": args.warp_dir,
+            "warp_env": args.warp_env,
+            "opuset_env": args.opuset_env,
+            "pytom_env": args.pytom_env,
+        }.items()
+        if v is not None
+    }
+    result = probe(known)
+    if args.work_dir:
+        scripts_dir = str(Path(__file__).resolve().parent)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import run_state
+
+        state = run_state.init_state(args.work_dir)
+        state["environment"] = result["environment"]
+        state["cluster"] = result["cluster"]
+        state["preflight"] = {
+            "status": "done" if not result["missing"] else "pending",
+            "missing": list(result["missing"]),
+        }
+        run_state.save_state(state)
+    print(json.dumps(result, indent=2))
+    return 1 if (args.strict and result["missing"]) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

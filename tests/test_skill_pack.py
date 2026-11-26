@@ -170,3 +170,70 @@ def test_every_restatement_points_at_the_home(path, pointer):
     text = (ROOT / path).read_text()
     assert "pipeline.conf" in text and "species.conf" in text, "probe is stale"
     assert pointer in text, f"{path} restates the conf split without citing {pointer}"
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_frontmatter_name_matches_directory(skill):
+    fm, _ = _frontmatter(skill)
+    m = re.search(r"^name:\s*(\S+)\s*$", fm, re.M)
+    assert m, f"{skill}: no name in frontmatter"
+    assert m.group(1) == skill, f"{skill}: frontmatter name {m.group(1)!r} != {skill!r}"
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_no_duplicated_generic_agent_rules_in_skill_body(skill):
+    _, body = _frontmatter(skill)
+    assert "## Agent Rules" not in body, (
+        f"{skill}: generic Agent Rules belong in root AGENTS.md, not duplicated in SKILL.md"
+    )
+
+
+def test_antigravity_discovery_and_rules_wired():
+    agents_md = ROOT / "AGENTS.md"
+    assert agents_md.is_file(), "root AGENTS.md missing"
+    rules_text = agents_md.read_text()
+    assert not rules_text.startswith("---\n"), "standalone AGENTS.md must not have YAML frontmatter"
+    assert "Do only what the user asks" in rules_text
+
+    # Single unified Antigravity plugin bundle (no duplicate root skills.json / hooks.json)
+    assert not (ROOT / ".agents" / "skills.json").exists(), "duplicate .agents/skills.json"
+    assert not (ROOT / ".agents" / "hooks.json").exists(), "duplicate .agents/hooks.json"
+
+    plugin_dir = ROOT / ".agents" / "plugins" / "opus-et"
+    manifest = json.loads((plugin_dir / "plugin.json").read_text())
+    assert manifest.get("name") == "opus-et"
+
+    plugin_rules = plugin_dir / "rules" / "AGENTS.md"
+    assert plugin_rules.is_file()
+    assert plugin_rules.resolve() == agents_md.resolve()
+
+    for skill in SKILLS:
+        linked = plugin_dir / "skills" / skill
+        assert (linked / "SKILL.md").is_file(), f"plugin missing skill {skill}"
+        assert linked.resolve() == (ROOT / skill).resolve()
+
+    hooks_cfg = json.loads((plugin_dir / "hooks.json").read_text())
+    assert "opus-et-sbatch-guard" in hooks_cfg
+    pre_tool = hooks_cfg["opus-et-sbatch-guard"]["PreToolUse"]
+    assert any(g.get("matcher") == "run_command" for g in pre_tool)
+    assert (plugin_dir / "scripts" / "guard_sbatch.py").is_file()
+
+
+def test_visualize_skill_lists_all_scripts():
+    _, body = _frontmatter("opus-et-visualize")
+    scripts = sorted(p.name for p in (ROOT / "opus-et-visualize" / "scripts").glob("*.py"))
+    missing = [s for s in scripts if s not in body]
+    assert not missing, f"opus-et-visualize/SKILL.md does not list scripts: {missing}"
+
+
+def test_shared_rules_ship_with_copied_skills(tmp_path):
+    import shutil
+
+    for skill in SKILLS:
+        shutil.copytree(ROOT / skill, tmp_path / skill)
+    for skill in SKILLS:
+        body = (tmp_path / skill / "SKILL.md").read_text()
+        links = re.findall(r"\[AGENTS\.md\]\(([^)]+)\)", body)
+        assert links, f"{skill} must point to the shared rules"
+        for link in links:
+            assert (tmp_path / skill / link).read_bytes() == (ROOT / "AGENTS.md").read_bytes()

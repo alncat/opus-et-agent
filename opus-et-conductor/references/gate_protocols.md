@@ -72,7 +72,11 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
   abundance: abundant particles ~5000/TS, sparse species far fewer (FAS ~600/TS — its
   reference has only ~400 picks across all 10 tomograms).
 - **Validate before the full run** (single-TS gate): run TM on ONE reference-rich tomogram,
-  extract, and score recall vs the reference with `tm_eval_agreement.py`. High recall
+  extract, and score recall vs the reference with `tm_eval_agreement.py`. After alignment QC approval,
+  submit `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/tm_pilot.slurm" TS_034`
+  with the chosen active tomostar basename. The job prints the path to `<series>_scored.star` in
+  a fresh `$WORK_DIR/tm_pilots/` directory. Use it as `--candidate` and pass `--tomo <series>`
+  when scoring a multi-tomogram reference. Each row carries its PyTOM score and the TM volume voxel size. Record the scientist’s `tm_params` decision before the full run. High recall
   confirms the template scale, `TEMPLATE_INVERT` (contrast sign), coordinate frame, and the
   missing wedge are all right before committing every tomogram (ribo TS_034 → recall 1.000;
   FAS validated on TS_028). Low recall means fix contrast/scale/mask — NOT the threshold.
@@ -130,7 +134,7 @@ The *before-Phase-6* decision of which matching parameters to run — distinct f
   template, so `compare_to_template.py`'s CC ranking pushes the BEST states to the BOTTOM; treat a
   low consensus-CC as a POSSIBLE high-res signal, not junk, and cross-check in 3D. ChimeraX's
   default/auto contour also sits too low and renders high-res detail as low-density "speckle" that
-  reads as grainy junk — render with `demo/gen_gallery_cxc.py --percentile 98` (per-map 98th-percentile
+  reads as grainy junk — render with `opus-et-visualize/scripts/gen_gallery_cxc.py --percentile 98` (per-map 98th-percentile
   contour). A cleanly separated, abundant latent-UMAP island is often the sharpest/best-aligned
   population, not an artifact. (Real case: ribo z8_expanded k17/18/19 were the high-res ribosomes
   yet ranked last by CC and looked grainy at auto-contour.) This cuts both ways at the k-means

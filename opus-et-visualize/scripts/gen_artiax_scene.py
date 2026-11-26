@@ -9,7 +9,9 @@ ChimeraX 1.10 (see emit_cxc's docstring); renders run locally on the Mac, not on
 the cluster (spec §7.1, §11).
 """
 from pathlib import Path
+import argparse
 import colorsys
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -245,3 +247,91 @@ def emit_cxc(tomogram, map_path, state_stars, out_cxc, state_colors=None,
     text = "\n".join(lines) + "\n"
     Path(out_cxc).write_text(text)
     return text
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Emit a ChimeraX/ArtiaX .cxc scene placing a refined map at every particle pose."
+    )
+    ap.add_argument("--star", required=True, help="Input RELION particle STAR file")
+    ap.add_argument("--tomogram", required=True, help="Tomogram MRC path")
+    ap.add_argument("--map", dest="map_path", required=True, help="Refined reference map MRC path")
+    ap.add_argument("--coords-angpix", type=float, required=True,
+                    help="Pixel size (A/px) of STAR rlnCoordinateX/Y/Z")
+    ap.add_argument("--tomo-angpix", type=float, default=None,
+                    help="Pixel size (A/px) of tomogram (defaults to --coords-angpix)")
+    ap.add_argument("--origin-angpix", type=float, default=None,
+                    help="Pixel size (A/px) of pixel-valued RELION origin shifts (defaults to --coords-angpix)")
+    ap.add_argument("--out-cxc", required=True, help="Output ChimeraX .cxc script path")
+    ap.add_argument("--stars-dir", default=None,
+                    help="Directory for per-state RELION STAR files (defaults to <scene>_stars beside the .cxc)")
+    ap.add_argument("--labels", default=None,
+                    help="Optional OPUS-ET k-means labels.pkl (attached before tomogram filtering)")
+    ap.add_argument("--tomo-name", default=None,
+                    help="Filter rlnMicrographName to one tomogram (applied after --labels)")
+    ap.add_argument("--contour-level", type=float, default=None, help="Absolute map surface level")
+    ap.add_argument("--contour-sd", type=float, default=None, help="Map surface level in SD units")
+    ap.add_argument("--bg-color", default="black", help="Background color (default: black)")
+    ap.add_argument("--tilt-x", type=float, default=-30.0, help="Initial X tilt in degrees (default: -30)")
+    ap.add_argument("--silhouettes", action="store_true", help="Enable crisp silhouettes (recommended for hero scenes)")
+    ap.add_argument("--shadows", action="store_true", help="Enable ground shadows (small scenes only)")
+    ap.add_argument("--still-out", default=None, help="Optional PNG path to save a still render")
+    ap.add_argument("--movie-out", default=None, help="Optional MP4 path to record a movie")
+    ap.add_argument("--movie-rock", type=int, default=None, help="Rock +-N degrees instead of 360 turntable")
+    ap.add_argument("--movie-step", type=int, default=None, help="Coarsen surface step during movie recording")
+    args = ap.parse_args(argv)
+
+    tomo_angpix = args.coords_angpix if args.tomo_angpix is None else args.tomo_angpix
+    df = reconcile_coords(
+        read_particles(args.star),
+        coords_angpix=args.coords_angpix,
+        tomo_angpix=tomo_angpix,
+        origin_angpix=args.origin_angpix,
+    )
+    if args.labels:
+        with open(args.labels, "rb") as fh:
+            labels = pickle.load(fh)
+        df = attach_labels(df, labels)
+    else:
+        df["state"] = 0
+
+    if args.tomo_name:
+        if "rlnMicrographName" not in df.columns:
+            raise SystemExit("--tomo-name requested, but STAR has no rlnMicrographName column")
+        df = df[df["rlnMicrographName"] == args.tomo_name]
+        if df.empty:
+            raise SystemExit(f"no particles found for tomogram {args.tomo_name!r}")
+
+    out_cxc = Path(args.out_cxc)
+    stars_dir = Path(args.stars_dir) if args.stars_dir else out_cxc.with_name(out_cxc.stem + "_stars")
+    out_cxc.parent.mkdir(parents=True, exist_ok=True)
+    stars_dir = stars_dir.resolve()
+    stars_dir.mkdir(parents=True, exist_ok=True)
+    state_stars = {
+        s: str(write_relion_star(df, stars_dir / f"state{s}.star", state=s))
+        for s in sorted(set(df["state"]))
+    }
+    emit_cxc(
+        tomogram=args.tomogram,
+        map_path=args.map_path,
+        state_stars=state_stars,
+        out_cxc=out_cxc,
+        coords_angpix=args.coords_angpix,
+        origin_angpix=args.origin_angpix,
+        contour_level=args.contour_level,
+        contour_sd=args.contour_sd,
+        bg_color=args.bg_color,
+        tilt_x=args.tilt_x,
+        silhouettes=args.silhouettes,
+        shadows=args.shadows,
+        still_out=args.still_out,
+        movie_out=args.movie_out,
+        movie_rock=args.movie_rock,
+        movie_step=args.movie_step,
+    )
+    print(f"wrote {out_cxc} ({len(df)} particles, {len(state_stars)} state(s))")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

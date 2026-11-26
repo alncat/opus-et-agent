@@ -597,3 +597,94 @@ def test_frame_import_passes_the_defocus_floor(pipeline, mode, flag):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     ctf = next(c for c in calls if 'ctf' in c[0])
     assert ctf[ctf.index(flag) + 1] == '2'
+
+
+def test_pilot_runs_all_stages_for_only_the_requested_series(pipeline, monkeypatch):
+    """Exercise the shipped SLURM scripts with the cluster executables stubbed."""
+    import shutil
+    import starfile
+
+    _, project = pipeline
+    skill = project / "installed"
+    shutil.copytree(SCRIPTS, skill / "scripts")
+    shutil.copy(project / "pipeline.conf", skill)
+    for name in ("ref.mrc", "mask.mrc", "angles.em"):
+        (project / name).touch()
+    (skill / "species.conf").write_text(
+        'TEMPLATE_MRC="ref.mrc"\nTM_MASK_MRC="mask.mrc"\nANGLE_LIST="angles.em"\n'
+        'COORDS_ANGPIX=2.369\nNUM_CANDIDATES=10\nMIN_SCORE=0\nDEFAULT_Z_START=0\n')
+    (project / "tomostar").mkdir()
+    for series in ("A", "B"):
+        (project / "tomostar" / (series + ".tomostar")).touch()
+        volume = project / "tiltstack" / series / "tm_ali.mrc"
+        volume.parent.mkdir()
+        volume.touch()
+    # Model the Linux shell builtin on macOS's older system bash.
+    (project / ".bashrc").write_text(
+        'if ! type mapfile >/dev/null 2>&1; then\n'
+        'mapfile() { local line; while IFS= read -r line; do eval "$2+=(\\"\\$line\\")"; done; }\nfi\n')
+    monkeypatch.setenv("HOME", str(project))
+    monkeypatch.setenv("PATH", str(project / "bin") + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("PYTHONPATH", str(project))
+    monkeypatch.setenv("SKILL_DIR", str(skill))
+    monkeypatch.setenv("SPECIES_CONF", str(skill / "species.conf"))
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "1")
+    for name, body in {
+        "localization.py": "exit 0",
+        "mpiexec": 'touch scores_ref.em angles_ref.em',
+    }.items():
+        executable = project / "bin" / name
+        executable.write_text("#!/bin/bash\n" + body + "\n")
+        executable.chmod(0o755)
+    extractor = project / "bin/extractCandidates.py"
+    extractor.write_text("#!" + sys.executable + "\n" + """import sys
+from pathlib import Path
+import xml.etree.ElementTree as ET
+def arg(key): return sys.argv[sys.argv.index(key) + 1]
+vol = ET.parse(arg("--jobFile")).find("Volume").get("Filename")
+Path(arg("--particleList")).write_text(f'<ParticleList><Particle><Score Value="0.12" />'
+    f'<PickPosition X="4" Y="8" Z="12" Origin="{vol}" /></Particle></ParticleList>')
+""")
+    extractor.chmod(0o755)
+    (project / "bin/python3").symlink_to(sys.executable)
+    cmd = ["bash", str(skill / "scripts" / "tm_pilot.slurm")]
+    assert subprocess.run(cmd + ["A", "B"]).returncode != 0
+    assert subprocess.run(cmd + ["absent"]).returncode != 0
+    for _ in range(2):
+        result = subprocess.run(cmd + ["B"], capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+    runs = sorted((project / "tm_pilots").iterdir())
+    assert len(runs) == 2
+    for run in runs:
+        assert [p.name for p in (run / "jobs").iterdir()] == ["B"]
+        scored = run / "B_scored.star"
+        row = starfile.read(scored).iloc[0]
+        assert row["rlnMicrographName"] == "B.tomostar"
+        assert row["rlnAutopickFigureOfMerit"] == pytest.approx(0.12)
+        assert row["rlnPixelSize"] == pytest.approx(9.476)
+        assert row["rlnCoordinateX"] == 4
+        evaluator = SCRIPTS.parents[1] / "opus-et-analysis/scripts/tm_eval_agreement.py"
+        evaluation = subprocess.run([sys.executable, str(evaluator), "--candidate", str(scored),
+                                     "--reference", str(scored), "--tomo", "B"],
+                                    capture_output=True, text=True, check=True)
+        assert json.loads(evaluation.stdout)["best"]["recall"] == 1
+        assert str(project / "tiltstack/B/tm_ali.mrc") in (run / "jobs/B/job.xml").read_text()
+    # A failing matcher must stop the pilot even if it left partial score maps.
+    (project / "bin/mpiexec").write_text("#!/bin/bash\ntouch scores_ref.em angles_ref.em\nexit 2\n")
+    failed = subprocess.run(cmd + ["B"], capture_output=True, text=True)
+    assert failed.returncode != 0
+    failed_run, = set((project / "tm_pilots").iterdir()) - set(runs)
+    assert not (failed_run / "B_scored.star").exists()
+
+
+def test_empty_pilot_keeps_a_readable_scored_star(tmp_path):
+    import starfile
+
+    xml = tmp_path / "empty_particles.xml"
+    xml.write_text("<ParticleList/>")
+    output = tmp_path / "empty.star"
+    subprocess.run([sys.executable, str(SCRIPTS / "tm_pilot_star.py"), str(xml), str(output)],
+                   check=True)
+    table = starfile.read(output)
+    assert table.empty
+    assert "rlnAutopickFigureOfMerit" in table

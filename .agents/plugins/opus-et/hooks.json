@@ -1,0 +1,16 @@
+{
+  "opus-et-sbatch-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ./scripts/guard_sbatch.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -72,3 +72,35 @@ def test_probe_uses_known_hints_and_marks_discovered():
     assert result["environment"]["discovered"] is True
     assert "gpu" in result["cluster"]["partitions"]
     assert result["missing"] == []
+
+
+def test_cli_emits_json_and_persists_state(tmp_path, monkeypatch, capsys):
+    import json
+    import run_state
+
+    monkeypatch.setattr(
+        pf,
+        "probe",
+        lambda known=None: {
+            "environment": {"discovered": True, "warp_dir": (known or {}).get("warp_dir")},
+            "cluster": {"partitions": ["gpu"]},
+            "missing": [],
+        },
+    )
+    rc = pf.main(["--warp-dir", "/w", "--work-dir", str(tmp_path), "--strict"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["environment"]["warp_dir"] == "/w"
+    state = run_state.load_state(tmp_path)
+    assert state["preflight"]["status"] == "done"
+    assert state["cluster"]["partitions"] == ["gpu"]
+
+
+def test_cli_strict_exits_nonzero_when_missing(monkeypatch, capsys):
+    monkeypatch.setattr(
+        pf,
+        "probe",
+        lambda known=None: {"environment": {"discovered": False}, "cluster": {}, "missing": ["warp_dir"]},
+    )
+    assert pf.main(["--strict"]) == 1
+    assert pf.main([]) == 0

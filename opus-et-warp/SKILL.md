@@ -1,20 +1,11 @@
 ---
-name: warp-opus-et
+name: opus-et-warp
 description: "Use when the user is processing cryo-ET data with WARP, AreTomo2, PyTOM or OPUS-ET: importing frame or tilt series from MDOCs, CTF estimation, tilt-series alignment, template matching, exporting subtomograms, M refinement, or training an OPUS-ET heterogeneity model. Also use on mentions of tomostar files, WarpTools, .st/.rawtlt stacks, defocus handedness, ts_export_particles, pipeline.conf or species.conf, or SLURM jobs for GPU tomography."
 ---
 
 # WARP/OPUS-ET Cryo-ET Processing Workflow
 
-## Agent Rules — read before acting
-
-- **Do only what the user asks.** Don't anticipate, extend, or fix unreported issues — even obvious ones. One change at a time.
-- **Read before editing.** Always read the current file/script before describing or modifying it. Don't rely on remembered content — the codebase changes.
-- **Verify before asserting; discover, don't guess.** If uncertain how a tool, flag, or script behaves, confirm it before relying on it — in rough order of authority: run `<tool> --help` / `--help | grep <flag>`; read the tool's **source** (PyTom, cryodrgn/OPUS-ET, WarpTools, AreTomo are open — the source is the ground truth for undocumented conventions, e.g. the missing-wedge `Angle1`/`Angle2` sign, which `--help` does not spell out); consult **official/online docs** (WebSearch/WebFetch) when the local tool is thin; or run the tool on a tiny synthetic input and inspect the output. Never infer a convention from a flag's name — a wrong assumption baked into a job runs silently and corrupts results. Wrong documentation is worse than no documentation.
-- **Enumerate scope before acting.** For multi-file changes, use `grep` to find all affected files and confirm scope with the user before making any edits.
-- **Show before and after for every edit.** Before modifying a script or config, quote the relevant current lines. After editing, summarize exactly what changed — not just "done."
-- **Don't chain changes.** Renaming a variable in one place does NOT mean you should rename it everywhere — confirm scope first.
-- **Don't redesign.** Apparent inconsistencies may be intentional. Respect the existing pattern unless the user asks to change it.
-- **When in doubt, show the current state and ask.** "Here's what I see. Do you want me to change X, Y, or both?"
+> Shared agent rules live in [AGENTS.md](../opus-et-conductor/references/AGENTS.md).
 
 ## IMPORTANT: Gather Experimental Settings First
 Collect the acquisition, tilt-series, template-matching, training, environment and M parameters before generating any command -- no placeholders. Frame type is detected from the file extension and MRC Z-dimension, not from names or MDOC counts. Full text: `references/settings.md`.
@@ -76,19 +67,19 @@ The run-directory layout each phase writes into (`warp_frameseries/`, `warp_tilt
 - **--split must be absolute path** in OPUS-ET training, placed inside the output directory
 - **Tomostar loop only**: always iterate from `tomostar/*.tomostar`, not from MRC glob
 
-**Before generating any command — the settings to collect:** read `references/settings.md`
+**Before generating any command — the settings to collect:** read [settings.md](./references/settings.md)
 
-**Config, validate, submit — the quick start:** read `references/quickstart.md`
+**Config, validate, submit — the quick start:** read [quickstart.md](./references/quickstart.md)
 
-**Per-script reference and run-directory layout:** read `references/scripts.md`
+**Per-script reference and run-directory layout:** read [scripts.md](./references/scripts.md)
 
-**For detailed troubleshooting and script patterns:** read `references/gotchas.md`
+**For detailed troubleshooting and script patterns:** read [gotchas.md](./references/gotchas.md)
 
-**For MTools refinement and OPUS-ET averaging:** read `references/advanced.md`
+**For MTools refinement and OPUS-ET averaging:** read [advanced.md](./references/advanced.md)
 
-**For the complete selected-state-to-M workflow:** read `references/workflow.md`
+**For the complete selected-state-to-M workflow:** read [workflow.md](./references/workflow.md)
 
-**For step-by-step phase commands:** read `references/phases.md`
+**For step-by-step phase commands:** read [phases.md](./references/phases.md)
 
 **External reference for WarpTools API:**
 <https://warpem.github.io/warp/reference/warptools/api/>

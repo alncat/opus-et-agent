@@ -5,14 +5,18 @@ description: "Use when the user asks what is running or failed on the cluster, w
 
 # OPUS-ET Status Server
 
+> Shared agent rules live in [AGENTS.md](../opus-et-conductor/references/AGENTS.md).
+
 A stdlib-only web dashboard (install beside `opus-et-conductor`) that polls the cluster over SSH
 and shows SLURM job state, pipeline phase progress, gate status, failure log
 tails, and a narrow typed config editor.
 
 ## Launch
 
+Run [status_server.py](./scripts/status_server.py):
+
 ```bash
-python3 opus-et-status/scripts/status_server.py \
+python3 ./scripts/status_server.py \
     --host <CLUSTER_HOST> \
     --work-dir <RUN_DIR> \
     --port 8080
@@ -20,7 +24,7 @@ python3 opus-et-status/scripts/status_server.py \
 
 Then open <http://127.0.0.1:8080>. This runs in the foreground; stop with Ctrl-C.
 Missing QC thumbnails are generated on the cluster login node and require Pillow there. On-demand rendering additionally needs
-the remote scripts and scientific Python packages listed in `references/panels.md`.
+the remote scripts and scientific Python packages listed in [panels.md](./references/panels.md).
 
 - `--host` is an SSH host or alias that already works non-interactively
   (`ssh <CLUSTER_HOST> true` must succeed without a password prompt; the client

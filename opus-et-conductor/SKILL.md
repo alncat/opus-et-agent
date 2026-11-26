@@ -8,28 +8,30 @@ description: "Use when the user wants a full cryo-ET run driven end-to-end on a 
 Orchestrates the cryo-ET pipeline as a supervised-autonomy agent: autonomous
 through mechanical phases, paused at scientific judgment calls.
 
-## Agent Rules — read before acting
-- Do only what the user asks; one change at a time.
-- Read before editing; verify tool behavior before asserting.
+## Conductor Rules
+> Shared agent rules live in [AGENTS.md](./references/AGENTS.md).
 - Never hold pipeline progress only in conversation — the source of truth is
   `$WORK_DIR/.opus_run_state.json` plus files on disk.
 
 ## 0. Preflight (always first)
-Before submitting any job, discover the environment and cluster:
-`scripts/preflight.py` is a library, not a CLI (no `__main__`) — the conductor
-imports it and calls `preflight.probe(...)` directly (there is no
-`python scripts/preflight.py` invocation). `probe` checks the supplied WARP path/env names and discovers available tools
-and SLURM partitions. Run these probes on the cluster login node (directly or
-over SSH), not on the desktop. For everything it returns under `missing`, ask the user
-with a clarifying question. Persist answers into `.opus_run_state.json`
-(`environment`, `cluster`, `preflight.status="done"`). A wrong WARP fork, absent
+Before submitting any job, discover the environment and cluster using
+[preflight.py](./scripts/preflight.py) (CLI or importable `preflight.probe(...)`):
+```bash
+python3 ./scripts/preflight.py --warp-dir <WARP_DIR> --warp-env <ENV> \
+    --opuset-env <ENV> --pytom-env <ENV> --work-dir "$WORK_DIR"
+```
+Run on the cluster login node (directly or over SSH), not on the desktop. It
+checks the supplied WARP fork/env names, discovers available tools and SLURM
+partitions, emits JSON, and (with `--work-dir`) persists `environment`,
+`cluster`, and `preflight` into `.opus_run_state.json`. For everything under
+`missing`, ask the user with a clarifying question. A wrong WARP fork, absent
 conda env, or unknown partition BLOCKS with a specific remediation.
 
 Set `SKILL_DIR` to the absolute cluster-side WARP-skill directory using
 `opus-et-warp/references/configuration.md`; submit from `$WORK_DIR` with `logs/` present.
 
 ## State model
-`scripts/run_state.py` owns `.opus_run_state.json` (schema v1). On any (re)start:
+[run_state.py](./scripts/run_state.py) owns `.opus_run_state.json` (schema v1). On any (re)start:
 1. `init_state(work_dir)` (loads existing state or creates it).
 2. Get live jobs: `squeue --noheader -o %i` → `parse_squeue_ids` → `reconcile_jobs`
    only after a successful query. Pass `query_succeeded=False` on SSH/SLURM failure;
@@ -54,7 +56,7 @@ mask, since 8b auto-creates a default sphere):
    per-tomostar completion) still run. Drop `--assume-env` only when running
    validate.sh standalone without a completed preflight. Resolve derived values.
 2. If a gate precedes this phase and is unapproved → open checkpoint (see
-   references/gate_protocols.md), wait, record the decision.
+   [gate_protocols.md](./references/gate_protocols.md)), wait, record the decision.
 3. `sbatch --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/<script>"` with the cluster's
    partition/gres overrides (`sbatch --partition=<partition> --gres=gpu:<count> --export=ALL,SKILL_DIR="$SKILL_DIR" "$SKILL_DIR/scripts/<script>"`). Record `set_phase(state, N, "running", job_ids=[job_id])`; save state.
 4. Monitor squeue (background). On completion → verifying. For a run that will
@@ -64,7 +66,7 @@ mask, since 8b auto-creates a default sphere):
    run directory, nothing installed on the cluster. It is a viewer — the conductor
    still owns `.opus_run_state.json`.
 5. Verify outputs via `validate.sh --json`. On failure, consult
-   references/diagnose_catalog.md; auto-fix only known-and-safe cases, else escalate.
+   [diagnose_catalog.md](./references/diagnose_catalog.md); auto-fix only known-and-safe cases, else escalate.
 6. Advance.
 
 ## Checkpoints
@@ -122,7 +124,7 @@ in `demo/qc/finale/` and `demo/qc/gate4_resolution/`.
 ## Files in this skill
 ```
 scripts/
-  preflight.py         # library — toolchain/partition discovery probes (probe())
+  preflight.py         # CLI + library — toolchain/partition discovery probes (probe())
   run_state.py         # library — owns .opus_run_state.json (schema v1): init / load / save / derive
 references/
   gate_protocols.md    # per-gate Prepare/Decide/Persist protocols (0, 1, tm_params, 2, 3, 4)

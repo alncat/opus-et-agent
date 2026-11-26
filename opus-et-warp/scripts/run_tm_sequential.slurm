@@ -174,3 +174,6 @@ echo ""
 echo "Next steps:"
 echo "  1. Extract candidates from correlation maps using extract_tm_candidates_parallel.slurm"
 echo "============================================================"
+
+# Propagate matching failures to SLURM and to the single-tomogram pilot.
+exit $((FAILED != 0))

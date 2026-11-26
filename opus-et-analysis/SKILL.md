@@ -7,47 +7,32 @@ description: "Use when the user has OPUS-ET training output and wants to interpr
 
 Process and analyze cryo-ET training results from opus-et.
 
-## Agent Rules — read before acting
-
-- **Do only what the user asks.** Don't anticipate, extend, or fix unreported issues — even obvious ones. One change at a time.
-- **Read before editing.** Always read the current file/script before describing or modifying it. Don't rely on remembered content — the codebase changes.
-- **Verify before asserting.** If uncertain how a tool, flag, or script behaves, check (`--help`, API docs, actual output) rather than inferring from naming. Wrong documentation is worse than no documentation.
-- **Enumerate scope before acting.** For multi-file changes, use `grep` to find all affected files and confirm scope with the user before making any edits.
-- **Show before and after for every edit.** Before modifying a script or config, quote the relevant current lines. After editing, summarize exactly what changed — not just "done."
-- **Don't chain changes.** Renaming a variable in one place does NOT mean you should rename it everywhere — confirm scope first.
-- **Don't redesign.** Apparent inconsistencies may be intentional. Respect the existing pattern unless the user asks to change it.
-- **When in doubt, show the current state and ask.** "Here's what I see. Do you want me to change X, Y, or both?"
+> Shared agent rules live in [AGENTS.md](../opus-et-conductor/references/AGENTS.md).
 
 
 ## Training Command Generation
-Run `python <skill-dir>/scripts/generate_train_cmd.py --help` for the required arguments, then invoke it with those arguments to generate a training script. Prefer the generator to hand-editing; the reference explains its options. Full text: `references/training_command.md`.
+Run `python ./scripts/generate_train_cmd.py --help` ([generate_train_cmd.py](./scripts/generate_train_cmd.py)) for the required arguments, then invoke it to generate a training script. Prefer the generator to hand-editing; the reference explains its options. Full text: [training_command.md](./references/training_command.md).
 
 ## Helper Scripts
 
-The following helper scripts ship with this skill and are located in the skill's `scripts/` directory (not the project directory):
+All helper scripts ship under `./scripts/` inside this skill directory (when invoking from a project working directory, pass the resolved skill path):
 
-```
-<skill-dir>/scripts/
-```
-
-`<skill-dir>` is the directory where this skill is installed. When invoking the scripts from a project working directory, replace `<skill-dir>` with the actual skill path, or copy/symlink the scripts into your project. Examples below use `<skill-dir>` as a placeholder.
-
-### `generate_train_cmd.py`
+### [generate_train_cmd.py](./scripts/generate_train_cmd.py)
 Generates training commands with automatic pose pkl generation.
 ```bash
-python <skill-dir>/scripts/generate_train_cmd.py [options]
+python ./scripts/generate_train_cmd.py [options]
 ```
 
-### `extract_config.py`
-Extracts configuration parameters from config.pkl.
+### [extract_config.py](./scripts/extract_config.py)
+Extracts configuration parameters from `config.pkl`.
 ```bash
-python <skill-dir>/scripts/extract_config.py config.pkl
+python ./scripts/extract_config.py config.pkl
 ```
 
-### `exclude_stars.py`
+### [exclude_stars.py](./scripts/exclude_stars.py)
 Checks overlap between two star files based on 3D coordinates.
 ```bash
-python <skill-dir>/scripts/exclude_stars.py <reference.star> <query.star>
+python ./scripts/exclude_stars.py <reference.star> <query.star>
 ```
 
 **Pixel size:** Supply `--angpix`, or load `Apix * downfrac` from `--config` (default: `config.pkl` in the current directory). Missing or invalid sampling stops the command; it never guesses a pixel size.
@@ -70,7 +55,7 @@ Check `_rlnDetectorPixelSize` (look up the named column) in the star file header
 
 The two values should agree closely. The star file value is the authoritative original; the config.pkl derivation is the training pipeline's record of it.
 
-Use `<skill-dir>/scripts/extract_config.py` to extract config values including `original_Apix`.
+Use [extract_config.py](./scripts/extract_config.py) to extract config values including `original_Apix`.
 
 ## Quick Reference
 
@@ -88,7 +73,7 @@ config = pickle.load(open('config.pkl', 'rb'))
 apix = config['model_args']['Apix'] * config['dataset_args']['downfrac']
 ```
 
-Use `<skill-dir>/scripts/extract_config.py` to extract these values.
+Use [extract_config.py](./scripts/extract_config.py) to extract these values.
 
 ## Multi-Body Training
 
@@ -115,19 +100,19 @@ These three mechanisms operate independently:
 - **Deformation** (`--masks`): Rigid body motions between defined bodies
 
 ## Common Workflows
-Analyse an epoch (PCA + k-means), volumes for k-means centres and principal components, per-cluster STAR files -- the `dsdsh` commands with their positional arguments. Full text: `references/workflows.md`.
+Analyse an epoch (PCA + k-means), volumes for k-means centres and principal components, per-cluster STAR files -- the `dsdsh` commands with their positional arguments. Full text: [workflows.md](./references/workflows.md).
 
 ## Complete Workflow Example
-A full Gate-3 pass end to end. Full text: `references/workflows.md`.
+A full Gate-3 pass end to end. Full text: [workflows.md](./references/workflows.md).
 
 ## Directory Structure Convention
-`analyze.<epoch>/` layout: `kmeans<K>/`, `pc<i>/`, and where each command writes. Full text: `references/workflows.md`.
+`analyze.<epoch>/` layout: `kmeans<K>/`, `pc<i>/`, and where each command writes. Full text: [workflows.md](./references/workflows.md).
 
 ## Complete Deformation Workflow Example
-The multi-body (`defanalyze`) equivalent of the Gate-3 pass. Full text: `references/workflows.md`.
+The multi-body (`defanalyze`) equivalent of the Gate-3 pass. Full text: [workflows.md](./references/workflows.md).
 
 ## Key Differences: analyze vs defanalyze Outputs
-What differs between the two output trees. Full text: `references/workflows.md`.
+What differs between the two output trees. Full text: [workflows.md](./references/workflows.md).
 
 ## Files in this skill
 ```
@@ -151,6 +136,6 @@ tests/                       # pytest — one per numerical script: test_{compar
 
 ## See Also
 
-- `references/commands.md` - Command reference and QC helper discovery (`--help` lists current options)
-- `<skill-dir>/scripts/extract_config.py` - Extract config parameters
-- Deformation workflows are documented inline above (see "Complete Deformation Workflow Example" and "Key Differences: analyze vs defanalyze Outputs")
+- [commands.md](./references/commands.md) - Command reference and QC helper discovery (`--help` lists current options)
+- [extract_config.py](./scripts/extract_config.py) - Extract config parameters
+- Deformation workflows are documented in [workflows.md](./references/workflows.md)
