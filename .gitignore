@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 .opus_run_state.json
+.opus_run_state.json.lock
 *.tmp
 .superpowers/
 gate1_qc/
@@ -11,3 +12,4 @@ gate3_chimerax/
 scratch_finale/
 scratch_panels/
 reports/
+/dist/opus-et.zip

@@ -132,14 +132,13 @@ def main(argv=None):
             sys.path.insert(0, scripts_dir)
         import run_state
 
-        state = run_state.init_state(args.work_dir)
-        state["environment"] = result["environment"]
-        state["cluster"] = result["cluster"]
-        state["preflight"] = {
-            "status": "done" if not result["missing"] else "pending",
-            "missing": list(result["missing"]),
-        }
-        run_state.save_state(state)
+        with run_state.edit_state(args.work_dir) as state:
+            state["environment"] = result["environment"]
+            state["cluster"] = result["cluster"]
+            state["preflight"] = {
+                "status": "done" if not result["missing"] else "pending",
+                "missing": list(result["missing"]),
+            }
     print(json.dumps(result, indent=2))
     return 1 if (args.strict and result["missing"]) else 0
 

@@ -193,7 +193,7 @@ def test_antigravity_discovery_and_rules_wired():
     assert agents_md.is_file(), "root AGENTS.md missing"
     rules_text = agents_md.read_text()
     assert not rules_text.startswith("---\n"), "standalone AGENTS.md must not have YAML frontmatter"
-    assert "Do only what the user asks" in rules_text
+    assert "Verify before asserting" in rules_text
 
     # Single unified Antigravity plugin bundle (no duplicate root skills.json / hooks.json)
     assert not (ROOT / ".agents" / "skills.json").exists(), "duplicate .agents/skills.json"
@@ -217,6 +217,11 @@ def test_antigravity_discovery_and_rules_wired():
     pre_tool = hooks_cfg["opus-et-sbatch-guard"]["PreToolUse"]
     assert any(g.get("matcher") == "run_command" for g in pre_tool)
     assert (plugin_dir / "scripts" / "guard_sbatch.py").is_file()
+
+    mcp_cfg = json.loads((plugin_dir / "mcp_config.json").read_text())
+    assert "opus-et" in mcp_cfg.get("mcpServers", {})
+    assert "${PLUGIN_ROOT}/scripts/mcp_server.py" in mcp_cfg["mcpServers"]["opus-et"]["args"]
+    assert (plugin_dir / "scripts" / "mcp_server.py").is_file()
 
 
 def test_visualize_skill_lists_all_scripts():

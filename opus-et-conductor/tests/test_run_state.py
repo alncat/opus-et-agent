@@ -1,4 +1,8 @@
 import json
+import os
+import pty
+import pwd
+import subprocess
 import sys
 from pathlib import Path
 
@@ -94,3 +98,37 @@ def test_failed_queue_query_does_not_advance_but_empty_success_does(tmp_path):
     assert st['phases']['7']['status'] == 'running'
     rs.reconcile_jobs(st, [])
     assert st['phases']['7']['status'] == 'verifying'
+
+
+def test_stale_snapshot_cannot_replace_newer_gate(tmp_path):
+    rs.init_state(tmp_path)
+    old = rs.load_state(tmp_path)
+    with rs.edit_state(tmp_path) as current:
+        rs.open_checkpoint(current, "setup", "1")
+    rs.exclude_tomostar(old, "TS_002")
+    with pytest.raises(ValueError, match="changed"):
+        rs.save_state(old)
+    assert rs.load_state(tmp_path)["checkpoints"][-1]["gate"] == "setup"
+
+
+def test_terminal_confirmation_requires_tty_and_preserves_review(tmp_path):
+    with rs.edit_state(tmp_path) as state:
+        rs.record_checkpoint(state, "setup", "pending", "1", voltage_kv=200)
+    cmd = [sys.executable, rs.__file__, "confirm", str(tmp_path), "setup"]
+    pipe = subprocess.run(cmd, input="approved\n", text=True, capture_output=True)
+    assert pipe.returncode != 0 and "interactive terminal" in pipe.stderr
+    assert not rs.gate_approved(rs.load_state(tmp_path), "setup")
+    master, slave = pty.openpty()
+    try:
+        with subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=subprocess.PIPE) as proc:
+            os.write(master, b"approved\n")
+            _, stderr = proc.communicate(timeout=10)
+            assert proc.returncode == 0, stderr
+    finally:
+        os.close(slave)
+        os.close(master)
+    record = rs.load_state(tmp_path)["checkpoints"][-1]
+    assert record["decision"] == "approved" and record["phase"] == "1"
+    assert record["voltage_kv"] == 200
+    assert record["confirmation"]["reviewer"] == pwd.getpwuid(os.getuid()).pw_name
+    assert record["confirmation"]["channel"] == "terminal"

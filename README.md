@@ -138,6 +138,29 @@ for s in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize opus-
 done
 ```
 
+**Standalone Antigravity plugin.** From the checkout, run `python3 tools/build_antigravity_plugin.py dist/opus-et.zip`. The ZIP contains the MCP server, submission hook, shared rules and all five skill directories. Extract it into an empty directory before installing it on another machine. Set `OPUS_ET_PYTHON` to the scientific environment’s Python executable for NumPy-backed training configs, FSC and visualization.
+
+**Desktop and cluster MCP connections.** The default connection runs all tools on one machine. For a desktop plus `super`, extract the same ZIP on each host and configure two connections as below. Replace the example install paths with the actual directories. Configure `OPUS_ET_PYTHON` on the host running the scientific tool.
+
+```json
+{
+  "mcpServers": {
+    "opus-desktop": {
+      "command": "python3",
+      "args": ["/absolute/local/opus-et/scripts/mcp_server.py", "--role", "desktop"]
+    },
+    "opus-super": {
+      "command": "ssh",
+      "args": ["-T", "super", "python3 /absolute/cluster/opus-et/scripts/mcp_server.py --role cluster"]
+    }
+  }
+}
+```
+
+Preflight, project state, checkpoint decisions and validation belong to the cluster connection. Scene generation belongs to the desktop connection. Both can run analysis on locally accessible data. The handshake and tool results report the execution hostname. Supply that name as `expected_host` when an operation must run on a particular host. The SSH alias can differ from the login node’s hostname.
+
+For a checkpoint decision, the server asks the scientist through the MCP client's confirmation form. The record includes the supplied reviewer name, decision time and confirmation channel. Clients without form support can open the checkpoint. The scientist then runs `python3 /path/to/opus-et-conductor/scripts/run_state.py confirm "$WORK_DIR" <gate>` in an interactive terminal on the project host.
+
 **Run it.** Open Claude Code in your working directory and hand off the dataset — the conductor takes it from there:
 
 > *"I have a cryo-ET dataset to process end-to-end, on my `<cluster>` cluster; frames + acquisition MDOCs are under `<DATA_DIR>`. Use the OPUS-ET conductor: preflight the toolchain, auto-detect the acquisition parameters, write and validate `pipeline.conf`, and begin the pipeline — pausing at each scientific checkpoint for my sign-off."*

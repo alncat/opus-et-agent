@@ -5,12 +5,9 @@ decides, and what is written back to config + `.opus_run_state.json`.
 
 ## Persisting decisions
 
-Use `run_state.GATES` as the shared gate vocabulary. Before asking for a decision,
-call `open_checkpoint(state, gate, next_phase)` and `save_state(state)`.
-After an explicit decision, call
-`record_checkpoint(state, gate, "approved" or "rejected", phase=next_phase, **evidence)`
-and save again. Approved phases become `ready`; rejected/pending phases stay at
-`checkpoint`. On resume use `gate_approved(state, gate)` before reopening it.
+Use `run_state.GATES` as the shared gate vocabulary. Open the checkpoint before presenting its evidence. Through MCP, use `opus_open_checkpoint`, then `opus_record_checkpoint` with the proposed decision, next phase and evidence. Approved and rejected decisions require a response from the scientist through the client form. A declined or cancelled form leaves the gate as it was. With a client that lacks form support, the scientist can sign off in a terminal on the project host using `python3 /path/to/run_state.py confirm "$WORK_DIR" <gate>`.
+
+For direct conductor code, use `with run_state.edit_state(work_dir) as state:` around each read–modify–write operation. Call `open_checkpoint(state, gate, next_phase)` in that transaction. Release the lock before the scientist reviews the evidence. Approved phases become `ready`; rejected/pending phases stay at `checkpoint`. On resume use `gate_approved(state, gate)` before reopening it.
 Do not record approval from QC metrics alone. Gates 0/1/TM/2/3/4 use
 `setup`, `alignment_qc`, `tm_params`, `picks_qc`, `state_selection`, `refine`.
 

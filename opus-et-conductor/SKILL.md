@@ -42,7 +42,7 @@ Set `SKILL_DIR` to the absolute cluster-side WARP-skill directory using
    "pending") that is SEPARATE from the phase-lifecycle `status` field below —
    its value must not be written directly into `status`.
 Lifecycle: pending → ready → running → verifying → done (+ failed/skipped).
-A gate parks the next phase at checkpoint; approval moves it to ready.
+Use `with run_state.edit_state(work_dir) as state:` for updates shared across sessions. Keep scientific review outside the transaction. A gate parks the next phase at checkpoint; approval moves it to ready.
 (These are the allowed `status` values, in `PHASE_STATUSES`.)
 
 ## Per-phase loop (between checkpoints)

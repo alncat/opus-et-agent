@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Extract configuration parameters from opus-et config.pkl file."""
 
+from numbers import Integral, Real
+from pathlib import Path
+
 import pickle
 import sys
 import json
@@ -38,6 +41,17 @@ def extract_config(config_path):
     }
 
 
+def _json_scalar(value):
+    """Convert numeric scalars from scientific libraries and path-valued config fields."""
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        return float(value)
+    if isinstance(value, Path):
+        return str(value)
+    raise TypeError(f"Cannot encode config value of type {type(value).__name__}")
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Usage: extract_config.py <config.pkl>", file=sys.stderr)
@@ -52,4 +66,4 @@ if __name__ == '__main__':
     params = extract_config(config_path)
     
     # Output as JSON for easy parsing
-    print(json.dumps(params, indent=2))
+    print(json.dumps(params, indent=2, default=_json_scalar))

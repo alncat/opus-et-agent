@@ -6,6 +6,9 @@ for pipeline progress. It is designed to survive Claude Code session restarts:
 phase status can be re-derived from disk (Task 4) and live jobs reconciled
 against squeue.
 """
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -71,7 +74,7 @@ def new_state(work_dir, pipeline_conf="pipeline.conf", species=None):
     return {
         "schema_version": SCHEMA_VERSION,
         "project": {
-            "work_dir": str(work_dir),
+            "work_dir": str(Path(work_dir).absolute()),
             "pipeline_conf": pipeline_conf,
             "species": list(species) if species else [],
         },
@@ -85,13 +88,49 @@ def new_state(work_dir, pipeline_conf="pipeline.conf", species=None):
     }
 
 
-def save_state(state):
-    work_dir = state["project"]["work_dir"]
-    target = state_path(work_dir)
+@contextmanager
+def _project_lock(work_dir):
+    # A separate persistent lock file survives atomic replacement of the state file.
+    with (Path(work_dir) / (STATE_FILENAME + ".lock")).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def _check_project(state, destination):
+    recorded = Path(state["project"]["work_dir"])
+    if recorded.resolve() != Path(destination).resolve():
+        raise ValueError(f"Run state belongs to {recorded}, requested {destination}")
+
+
+def _write_locked(state, destination):
+    target = state_path(destination)
+    updated = dict(state, revision=state.get("revision", 0) + 1)
     tmp = target.with_name(target.name + ".tmp")
-    tmp.write_text(json.dumps(state, indent=2))
-    os.replace(tmp, target)  # atomic on POSIX
+    tmp.write_text(json.dumps(updated, indent=2))
+    os.replace(tmp, target)
+    state["revision"] = updated["revision"]
     return target
+
+
+def save_state(state, *, work_dir=None):
+    """Save a previously read snapshot only if its on-disk revision still matches."""
+    destination = work_dir if work_dir is not None else state["project"]["work_dir"]
+    _check_project(state, destination)
+    with _project_lock(destination):
+        current = load_state(destination) if state_path(destination).exists() else {}
+        if current.get("revision", 0) != state.get("revision", 0):
+            raise ValueError("Run state changed; reload before saving or use edit_state")
+        return _write_locked(state, destination)
+
+
+@contextmanager
+def edit_state(work_dir):
+    """Read, modify and atomically commit one transaction under the project lock."""
+    with _project_lock(work_dir):
+        state = load_state(work_dir) if state_path(work_dir).exists() else new_state(work_dir)
+        _check_project(state, work_dir)
+        yield state
+        _write_locked(state, work_dir)
 
 
 def load_state(work_dir):
@@ -107,10 +146,32 @@ def load_state(work_dir):
 
 
 def init_state(work_dir, **kw):
-    if state_path(work_dir).exists():
-        return load_state(work_dir)
-    state = new_state(work_dir, **kw)
-    save_state(state)
+    with _project_lock(work_dir):
+        if state_path(work_dir).exists():
+            state = load_state(work_dir)
+            _check_project(state, work_dir)
+            return state
+        state = new_state(work_dir, **kw)
+        _write_locked(state, work_dir)
+        return state
+
+
+def gate_generation(state, gate):
+    return sum(c.get("gate") == gate for c in state["checkpoints"])
+
+
+def confirm_gate(work_dir, gate, decision, phase, evidence, generation, reviewer, channel):
+    """Commit exactly the reviewed gate decision, after the human interaction."""
+    with edit_state(work_dir) as state:
+        if gate_generation(state, gate) != generation:
+            raise ValueError("Checkpoint changed during review; review the current checkpoint again")
+        latest = next((c for c in reversed(state["checkpoints"]) if c.get("gate") == gate), {})
+        if phase is None and latest.get("decision") == "pending":
+            phase = latest.get("phase")
+        confirmation = {"reviewer": reviewer, "channel": channel,
+                        "time_utc": datetime.now(timezone.utc).isoformat()}
+        record_checkpoint(state, gate, decision, phase,
+                          **dict(evidence, confirmation=confirmation))
     return state
 
 
@@ -197,3 +258,32 @@ def active_tomostars(all_names, state):
     """`all_names` minus the excluded set, original order preserved."""
     excluded = set(state.get("excluded_tomostar", []))
     return [n for n in all_names if n not in excluded]
+
+
+if __name__ == "__main__":
+    import argparse
+    import pwd
+    import socket
+    import sys
+
+    parser = argparse.ArgumentParser(description="Review an open scientific checkpoint at the terminal.")
+    parser.add_argument("action", choices=["confirm"])
+    parser.add_argument("work_dir", type=Path)
+    parser.add_argument("gate", choices=dict(GATES))
+    args = parser.parse_args()
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        parser.exit(1, "Checkpoint review requires an interactive terminal.\n")
+    state = load_state(args.work_dir)
+    _check_project(state, args.work_dir)
+    records = [c for c in state["checkpoints"] if c["gate"] == args.gate]
+    if not records or records[-1].get("decision") != "pending":
+        parser.exit(1, "Open this checkpoint before reviewing it.\n")
+    print(f"Host {socket.gethostname()}, project {args.work_dir.resolve()}")
+    print(json.dumps(records[-1], indent=2))
+    decision = input("Enter approved or rejected, or press Return to cancel: ").strip()
+    if decision not in ("approved", "rejected"):
+        parser.exit(1, "No decision recorded.\n")
+    evidence = {k: v for k, v in records[-1].items() if k not in ("gate", "decision", "phase", "confirmation")}
+    confirm_gate(args.work_dir, args.gate, decision, records[-1].get("phase"), evidence,
+                 gate_generation(state, args.gate), pwd.getpwuid(os.getuid()).pw_name, "terminal")
+    print(f"Recorded {decision} for {args.gate}.")
