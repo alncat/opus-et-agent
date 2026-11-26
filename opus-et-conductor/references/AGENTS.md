@@ -17,6 +17,8 @@ These rules apply across the entire OPUS-ET five-skill pack (`opus-et-conductor`
 
 ## Pack Conventions
 
+- For a managed package install, use `opus-et status` to check the installed revision and `opus-et update` when the user requests an update. Add `--remote <ssh-alias>` when the request includes a cluster. Start a fresh client session after updating.
+
 - **Codex with desktop and cluster MCP connections.** Use the cluster connection for project state, preflight and validation, and the desktop connection for ChimeraX scene generation. Before submitting a SLURM job, call `opus_check_sbatch` on the cluster with the project’s absolute `work_dir` and the proposed `command_line`. A denial blocks submission. The MCP check is a dry run. Record scientific decisions through the checkpoint confirmation flow.
 - **Configuration single source of truth:** The `pipeline.conf` / `species.conf` split, `SKILL_DIR`, and `SPECIES_CONF` override live in `opus-et-warp/references/configuration.md`. Cite it rather than redefining it.
 - **SLURM submission guard:** When the Antigravity plugin is enabled, `.agents/plugins/opus-et/hooks.json` enforces a `PreToolUse` check on `run_command` that blocks `sbatch` in replay mode (`demo_replay: true`), blocks `sbatch` on local ChimeraX/ArtiaX visualization scripts, and checks prerequisite human gate approvals in the target project’s `.opus_run_state.json`. For a skills-only installation, follow the conductor’s gate protocol before submitting each job.

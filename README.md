@@ -127,7 +127,32 @@ OPUS-ET-AGENT provides five skills for Claude Code or Codex. Describe your datas
 - **For a real run** — an HPC cluster (SLURM + GPUs) with the cryo-ET toolchain the skills drive: **WARP** (the [`alncat` fork](https://github.com/alncat/warp), required for `--dont_correct_ctf_3d` / `--output_ctf_csv`), **AreTomo2**, **PyTOM**, **OPUS-ET** (`dsdsh`), and **M** (`MTools` / `MCore`), each in its conda env. The conductor's preflight probes for these and reports whatever is missing — it does not install them.
 - **For the in-cell finale** — a local **ChimeraX 1.10 + ArtiaX 0.7.0** desktop (the render runs locally, not on the cluster).
 
-**Install the skills.** Clone the repo and make the five skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy all five in together: status imports conductor from the sibling directory, and the shared agent rules ship in the conductor’s references directory. Demo assets remain in the cloned repository.
+### Install and update with Git
+
+From a checkout of this repository, run the installer once on your desktop. It detects installed clients. Use repeatable `--client codex`, `--client claude`, or `--client antigravity` to choose them explicitly.
+
+```bash
+git clone https://github.com/alncat/opus-et-agent.git
+cd opus-et-agent
+./tools/opus-et install
+```
+
+The installer puts `opus-et` in `~/.local/bin`. Add that directory to your shell's `PATH` or use the full path. From then on, run these commands from any directory, including a client's terminal:
+
+```bash
+opus-et update                 # update this machine from GitHub main
+opus-et status                 # show installed revisions on this machine
+opus-et update --remote super  # deploy the same commit to the SSH host
+opus-et status --remote super  # verify desktop and cluster installations
+```
+
+The updater keeps its own Git checkout under `~/.local/share/opus-et/`. Codex and Claude skills link to the active release. Antigravity receives a complete plugin in its global plugin directory. When the Codex CLI is available, the installer registers the desktop MCP server and, with `--remote`, the SSH connection. An existing MCP entry with a different launch command is reported for review. Open a fresh client session after updating. [Antigravity global plugin directory](https://antigravity.google/docs/plugins/#manual-plugin-installation)
+
+For a cluster install, supply the SSH alias on either `install` or `update`. Only the desktop fetches Git. The cluster receives a checksum-verified bundle, updates its stable MCP path, and links the five skills for Codex and Claude. Existing Agents and Kimi installations on that host are also migrated. Matching skill directories are backed up under `~/.local/share/opus-et/backups/` before conversion. If a copy has local changes, the updater identifies the directory so you can review or move it and retry. `status` checks installed files and identifies modified, missing or mixed installations.
+
+### Manual Claude Code setup
+
+Clone the repo and make the five skill directories discoverable by Claude Code — a skill is just a folder with a `SKILL.md`, auto-discovered from `.claude/skills/` (this project only) or `~/.claude/skills/` (everywhere). No registration step. Symlink (shown) or copy all five in together: status imports conductor from the sibling directory, and the shared agent rules ship in the conductor’s references directory. Demo assets remain in the cloned repository.
 
 ```bash
 git clone https://github.com/alncat/opus-et-agent.git
@@ -138,7 +163,7 @@ for s in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize opus-
 done
 ```
 
-### Codex setup
+### Manual Codex setup
 
 From the root of your local OPUS-ET checkout, link the five skills so Codex can use them from any dataset directory. For a project-only install, set `skill_dir` to that project's `.agents/skills` directory. [Codex skill discovery](https://developers.openai.com/codex/skills/)
 
@@ -163,7 +188,7 @@ Open a new Codex session and select `$opus-et-conductor`. To verify the connecti
 
 > Use $opus-et-conductor and the opus-super connection to read the existing run state at `<cluster project path>`. Report the execution host and the latest checkpoint. Keep this check read-only.
 
-### Antigravity setup
+### Manual Antigravity setup
 
 **Standalone Antigravity plugin.** From the checkout, run `python3 tools/build_antigravity_plugin.py dist/opus-et.zip`. The ZIP contains the MCP server, submission hook, shared rules and all five skill directories. Extract it into an empty directory before installing it on another machine. Set `OPUS_ET_PYTHON` to the scientific environment’s Python executable for NumPy-backed training configs, FSC and visualization.
 

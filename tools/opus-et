@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+"""Install and update OPUS-ET skills and MCP tools from one Git revision."""
+import argparse
+from contextlib import ExitStack, contextmanager
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+from zipfile import BadZipFile, ZipFile
+
+
+UPSTREAM = "https://github.com/alncat/opus-et-agent.git"
+SKILLS = tuple("opus-et-" + s for s in ("analysis", "conductor", "status", "visualize", "warp"))
+HOME_DIR = Path.home()
+BASE = HOME_DIR / ".local/share/opus-et"
+ACTIVE = HOME_DIR / ".agents/plugins/opus-et"
+REPO = BASE / "checkout"
+AGY_DIR = HOME_DIR / ".gemini/config/plugins/opus-et"
+LAUNCHER = HOME_DIR / ".local/bin/opus-et"
+ROOTS = {"codex": HOME_DIR / ".agents/skills", "claude": HOME_DIR / ".claude/skills"}
+CLIENTS = (*ROOTS, "antigravity")
+REMOTE_PYTHON = ('if command -v python3 >/dev/null; then py=python3; '
+                 'else py="$HOME/.local/share/uv/tools/kimi-cli/bin/python"; fi; exec "$py"')
+REVISION = re.compile(r"[0-9a-f]{40}")
+
+
+def output(*args):
+    return subprocess.check_output(args, text=True).strip()
+
+
+@contextmanager
+def lock():
+    BASE.mkdir(parents=True, exist_ok=True)
+    with (BASE / ".update.lock").open("a") as stream:
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise ValueError(f"Another update is using {BASE}; retry when it finishes") from exc
+        yield
+
+
+def switch(link, target):
+    link.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=link.parent) as tmp:
+        staged = Path(tmp) / "link"
+        staged.symlink_to(target)
+        staged.replace(link)
+
+
+def digest(content):
+    return hashlib.sha256(content).hexdigest()
+
+
+def files(root):
+    """Compare operator files as well as package files. Ignore generated caches."""
+    result = {}
+    for directory, dirs, names in os.walk(root):
+        folder = Path(directory)
+        dirs[:] = [d for d in dirs if d not in ("__pycache__", ".pytest_cache")]
+        for name in names + dirs[:]:
+            path = folder / name
+            if name == ".DS_Store" or name.startswith("._"):
+                continue
+            key = path.relative_to(root).as_posix()
+            if path.is_symlink():
+                result[key] = ("link", os.readlink(path))
+            elif path.is_file():
+                result[key] = (digest(path.read_bytes()), bool(path.stat().st_mode & 0o111))
+            elif not path.is_dir():
+                raise ValueError(f"Unexpected special file {path}")
+    return result
+
+
+def release_revision(path):
+    path = path.resolve()
+    if (path.name == "opus-et" and path.parent.parent == BASE / "releases"
+            and REVISION.fullmatch(path.parent.name) and path.is_dir()):
+        return path.parent.name
+    return None
+
+
+def bundle_files(bundle):
+    return {i.filename: (digest(bundle.read(i)), bool((i.external_attr >> 16) & 0o111))
+            for i in bundle.infolist() if not i.is_dir()}
+
+
+def matches(plugin, manifest):
+    actual = files(plugin)
+    # The original cluster deploy linked an additional guide beside its ZIP.
+    if "README.md" not in manifest and (plugin / "README.md").is_symlink():
+        guide = plugin / "README.md"
+        if guide.resolve() == plugin.resolve().parent / "README.md":
+            actual.pop("README.md", None)
+    return actual == manifest
+
+
+def stage(archive, revision):
+    release = BASE / "releases" / revision
+    release.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(archive) as bundle:
+        manifest = bundle_files(bundle)
+        if release.exists():
+            if matches(release / "opus-et", manifest):
+                return release / "opus-et"
+            # Existing cluster releases predate the bundled README.
+            old_zip = release / "opus-et.zip"
+            if old_zip.exists():
+                with ZipFile(old_zip) as old:
+                    before = bundle_files(old)
+                if (set(manifest) - set(before) <= {"README.md", "REVISION"}
+                        and all(manifest.get(k) == v for k, v in before.items())
+                        and matches(release / "opus-et", before)
+                        and digest((release / "opus-et/README.md").read_bytes()) == manifest["README.md"][0]):
+                    return release / "opus-et"
+            raise ValueError(f"Existing release differs from Git {revision}: {release}")
+        with tempfile.TemporaryDirectory(dir=release.parent) as tmp:
+            staged = Path(tmp) / "release"
+            plugin = staged / "opus-et"
+            plugin.mkdir(parents=True)
+            for entry in bundle.infolist():
+                name = Path(entry.filename)
+                if name.is_absolute() or ".." in name.parts or entry.is_dir():
+                    raise ValueError(f"Invalid plugin member {name}")
+                path = plugin / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(bundle.read(entry))
+                path.chmod(0o755 if manifest[entry.filename][1] else 0o644)
+            shutil.copyfile(archive, staged / "opus-et.zip")
+            staged.rename(release)
+    return release / "opus-et"
+
+
+def skill_roots(clients, cluster):
+    roots = {c: ROOTS[c] for c in clients if c in ROOTS}
+    if cluster:
+        legacy = [HOME_DIR / ".config/agents/skills", *HOME_DIR.glob(
+            ".local/share/uv/tools/kimi-cli/lib/python*/site-packages/kimi_cli/skills")]
+        roots.update({str(p): p for p in legacy if any((p / s).is_dir() for s in SKILLS)})
+    return roots
+
+
+def migration(roots, plugin, previous):
+    plan = []
+    conflicts = []
+    for root in roots.values():
+        for skill in SKILLS:
+            dest = root / skill
+            target = ACTIVE / "skills" / skill
+            if dest.is_symlink() and os.readlink(dest) == str(target):
+                continue
+            if os.path.lexists(dest):
+                actual = files(dest) if dest.is_dir() else None
+                candidates = [plugin] + ([previous] if previous else [])
+                if not any(actual == files(p / "skills" / skill) for p in candidates):
+                    conflicts.append(str(dest))
+                    continue
+            plan.append((dest, target))
+    if conflicts:
+        raise ValueError("Review or move these differing skill installations before retrying:\n"
+                         + "\n".join(conflicts))
+    return plan
+
+
+def install_agy(plugin, previous):
+    """Publish a real directory in Antigravity's documented global plugin location."""
+    if shutil.which("agy"):
+        subprocess.run(["agy", "plugin", "validate", "--strict", str(plugin)], check=True)
+    expected = files(plugin)
+    existing = os.path.lexists(AGY_DIR)
+    if existing:
+        actual = files(AGY_DIR) if AGY_DIR.is_dir() else None
+        if actual == expected:
+            return
+        # Earlier standalone ZIPs omitted the root README and revision marker.
+        candidates = [expected] + ([files(previous)] if previous else [])
+        for candidate in candidates:
+            standalone = {k: v for k, v in candidate.items() if k not in ("README.md", "REVISION")}
+            if actual == candidate or actual == standalone:
+                break
+        else:
+            raise ValueError(f"Antigravity plugin differs from known releases; review {AGY_DIR}")
+    AGY_DIR.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=AGY_DIR.parent) as tmp:
+        staged = Path(tmp) / "new"
+        shutil.copytree(plugin, staged)
+        backup = None
+        if existing:
+            backups = BASE / "backups"
+            backups.mkdir(exist_ok=True)
+            backup = Path(tempfile.mkdtemp(prefix="antigravity-", dir=backups)) / "opus-et"
+            AGY_DIR.rename(backup)
+        try:
+            staged.rename(AGY_DIR)
+        except OSError:
+            if backup:
+                backup.rename(AGY_DIR)
+            raise
+
+
+def activate(archive, revision, clients, cluster):
+    previous = None
+    if os.path.lexists(ACTIVE):
+        if not ACTIVE.is_symlink() or not release_revision(ACTIVE):
+            raise ValueError(f"Existing unmanaged plugin at {ACTIVE}; move it before retrying")
+        previous = ACTIVE.resolve()
+        with ZipFile(previous.parent / "opus-et.zip") as old:
+            if not matches(previous, bundle_files(old)):
+                raise ValueError(f"Active plugin has local changes: {previous}")
+    plugin = stage(archive, revision)
+    roots = skill_roots(clients, cluster)
+    plan = migration(roots, plugin, previous)
+    with ExitStack() as rollback:
+        for dest, target in plan:
+            if dest.exists() and not dest.is_symlink():
+                backup_root = BASE / "backups"
+                backup_root.mkdir(exist_ok=True)
+                backup = Path(tempfile.mkdtemp(prefix=dest.name + "-", dir=backup_root)) / dest.name
+                dest.rename(backup)
+                rollback.callback(backup.rename, dest)
+                rollback.callback(dest.unlink, missing_ok=True)
+                print(f"Preserved {dest} at {backup}", flush=True)
+            elif dest.is_symlink():
+                rollback.callback(switch, dest, os.readlink(dest))
+            else:
+                rollback.callback(dest.unlink, missing_ok=True)
+            switch(dest, target)
+        if "antigravity" in clients:
+            install_agy(plugin, previous)
+        switch(ACTIVE, plugin)
+        rollback.pop_all()
+
+
+def installed_revision(paths, subset):
+    if not paths or not all(p.is_dir() for p in paths):
+        return "missing or incomplete"
+    actual = [files(p) for p in paths] if subset else []
+    # Resolve each client's own links before looking for content-equivalent copies.
+    targets = [p.resolve().parent.parent if subset else p.resolve() for p in paths]
+    revisions = {release_revision(target) for target in targets}
+    if len(revisions) != 1:
+        return "mixed releases"
+    linked = revisions.pop()
+    candidates = [targets[0]] if linked else [ACTIVE.resolve(), *sorted((BASE / "releases").glob("*/opus-et"))]
+    for plugin in dict.fromkeys(candidates):
+        revision = release_revision(plugin)
+        if not revision:
+            continue
+        with ZipFile(plugin.parent / "opus-et.zip") as bundle:
+            manifest = bundle_files(bundle)
+        if subset:
+            for p, content in zip(paths, actual):
+                prefix = "skills/" + p.name + "/"
+                if content != {k[len(prefix):]: v for k, v in manifest.items() if k.startswith(prefix)}:
+                    break
+            else:
+                return revision if linked else f"files match {revision} (copy)"
+        elif matches(paths[0], manifest):
+            if linked or ("REVISION" in manifest and (paths[0] / "REVISION").read_text().strip() == revision):
+                return revision
+            return f"files match {revision} (copy)"
+    return "modified or unknown"
+
+
+def status(clients, cluster=False):
+    host = socket.gethostname()
+    print(f"{host}  MCP plugin  {installed_revision([ACTIVE], False)}")
+    for client, root in skill_roots(clients, cluster).items():
+        rev = installed_revision([root / s for s in SKILLS], True)
+        print(f"{host}  {client} skills  {rev}  {root}")
+    if "antigravity" in clients:
+        print(f"{host}  antigravity  {installed_revision([AGY_DIR], False)}  {AGY_DIR}")
+
+
+def revision_from_git(source):
+    if not REPO.exists():
+        with tempfile.TemporaryDirectory(dir=BASE) as tmp:
+            clone = Path(tmp) / "checkout"
+            subprocess.run(["git", "clone", "--single-branch", "--branch", "main", "--",
+                            source or UPSTREAM, str(clone)], check=True)
+            clone.rename(REPO)
+    else:
+        if source and output("git", "-C", REPO, "remote", "get-url", "origin") != source:
+            raise ValueError(f"Managed checkout already has another origin at {REPO}")
+        if output("git", "-C", REPO, "rev-parse", "--abbrev-ref", "HEAD") != "main":
+            raise ValueError(f"Managed checkout is no longer on main: {REPO}")
+        if output("git", "-C", REPO, "status", "--porcelain", "--untracked-files=all"):
+            raise ValueError(f"Managed checkout has local edits at {REPO}")
+        subprocess.run(["git", "-C", REPO, "fetch", "origin", "main"], check=True)
+        subprocess.run(["git", "-C", REPO, "merge", "--ff-only", "FETCH_HEAD"], check=True)
+        if output("git", "-C", REPO, "rev-parse", "HEAD") != output("git", "-C", REPO, "rev-parse", "FETCH_HEAD"):
+            raise ValueError("Managed checkout contains unpublished commits")
+    return output("git", "-C", REPO, "rev-parse", "HEAD")
+
+
+def remote_call(host, action, revision=None, archive=None):
+    if not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.@-]*", host):
+        raise ValueError("Use an SSH host alias or user@hostname")
+    # Noninteractive super sessions may expose Python only through Kimi's environment.
+    source = Path(__file__).read_text()
+    command = REMOTE_PYTHON + " -c " + shlex.quote(source) + " " + action
+    if archive:
+        command += " " + revision + " " + digest(archive.read_bytes())
+        with archive.open("rb") as stream:
+            result = subprocess.run(["ssh", "-T", host, command], stdin=stream)
+    else:
+        result = subprocess.run(["ssh", "-T", host, command], stdin=subprocess.DEVNULL)
+    if result.returncode:
+        raise ValueError(f"SSH {action.lstrip('_')} on {host} failed (exit {result.returncode}); see output above")
+
+
+def cluster_receive():
+    clients = ("codex", "claude")
+    if sys.argv[1] == "_receive":
+        revision, checksum = sys.argv[2:]
+        if not REVISION.fullmatch(revision):
+            raise ValueError("Invalid release revision")
+        with lock(), tempfile.NamedTemporaryFile(dir=BASE) as stream:
+            shutil.copyfileobj(sys.stdin.buffer, stream)
+            stream.flush()
+            archive = Path(stream.name)
+            if digest(archive.read_bytes()) != checksum:
+                raise ValueError("Incomplete release transfer")
+            activate(archive, revision, clients, True)
+    status(clients, cluster=True)
+
+
+def codex_mcp(name, command, args, previous_args=None):
+    result = subprocess.run(["codex", "mcp", "get", name, "--json"], capture_output=True, text=True)
+    if not result.returncode:
+        transport = json.loads(result.stdout)["transport"]
+        if transport.get("command") == command and transport.get("args") in (args, previous_args):
+            return
+        raise ValueError(f"Existing Codex MCP entry {name} has another command. Review it with codex mcp get {name}; "
+                         f"to migrate, remove that entry with codex mcp remove {name} and retry.")
+    if "No MCP server named" not in result.stderr:
+        raise ValueError(result.stderr.strip() or f"Cannot inspect Codex MCP entry {name}")
+    subprocess.run(["codex", "mcp", "add", name, "--", command, *args], check=True)
+
+
+def main():
+    if sys.argv[1:2] in (["_receive"], ["_status"]):
+        cluster_receive()
+        return
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="action", required=True)
+    install = commands.add_parser("install", help="Install the package and select clients")
+    install.add_argument("--client", choices=CLIENTS, action="append", help="Repeat to select multiple clients")
+    install.add_argument("--source", help="Git origin for the initial main-branch checkout")
+    update = commands.add_parser("update", help="Fast-forward to main and refresh installed clients")
+    inspect = commands.add_parser("status", help="Verify the release used by each client")
+    for p in (install, update, inspect):
+        p.add_argument("--remote", metavar="HOST", help="Also operate on this cluster over SSH")
+    args = parser.parse_args()
+    state = BASE / "clients.json"
+
+    def selected():
+        return json.loads(state.read_text()) if state.exists() else []
+
+    if args.action == "status":
+        status(selected() or CLIENTS)
+        if args.remote:
+            remote_call(args.remote, "_status")
+        return
+    with lock():
+        clients = selected()
+        if args.action == "install":
+            detected = [c for c in CLIENTS if shutil.which("agy" if c == "antigravity" else c) or
+                        (c in ROOTS and ROOTS[c].is_dir())]
+            clients = sorted(set(clients) | set(args.client or detected))
+        if not clients:
+            raise ValueError("Run install --client codex, --client claude, or --client antigravity first")
+        if os.path.lexists(LAUNCHER) and not (LAUNCHER.is_symlink() and LAUNCHER.resolve() == BASE / "opus-et"):
+            raise ValueError(f"An existing command occupies {LAUNCHER}")
+        revision = revision_from_git(getattr(args, "source", None))
+        with tempfile.TemporaryDirectory(dir=BASE) as tmp:
+            archive = Path(tmp) / "opus-et.zip"
+            subprocess.run([sys.executable, str(REPO / "tools/build_antigravity_plugin.py"), str(archive)], check=True)
+            with ZipFile(archive, "a") as bundle:
+                bundle.write(REPO / "README.md", "README.md")
+                bundle.writestr("REVISION", revision + "\n")
+            activate(archive, revision, clients, False)
+            # Older releases did not ship the updater. Keep the bootstrap tool
+            # until the selected Git revision provides its own executable.
+            cli = REPO / "tools/opus-et"
+            staged_cli = Path(tmp) / "opus-et"
+            shutil.copyfile(cli if cli.is_file() else Path(__file__), staged_cli)
+            staged_cli.chmod(0o755)
+            staged_cli.replace(BASE / "opus-et")
+            switch(LAUNCHER, BASE / "opus-et")
+            tmp_state = Path(tmp) / "clients.json"
+            tmp_state.write_text(json.dumps(clients))
+            tmp_state.replace(state)
+            if args.remote:
+                remote_call(args.remote, "_receive", revision, archive)
+            if "codex" in clients and shutil.which("codex"):
+                codex_mcp("opus-desktop", "python3", [str(ACTIVE / "scripts/mcp_server.py"), "--role", "desktop"])
+                if args.remote:
+                    remote_cmd = REMOTE_PYTHON + " ~/.agents/plugins/opus-et/scripts/mcp_server.py --role cluster"
+                    original = "~/.local/share/uv/tools/kimi-cli/bin/python ~/.agents/plugins/opus-et/scripts/mcp_server.py --role cluster"
+                    name = "opus-" + re.sub(r"[^a-zA-Z0-9_-]", "-", args.remote)
+                    codex_mcp(name, "ssh", ["-T", args.remote, remote_cmd],
+                              ["-T", args.remote, original] if args.remote == "super" else None)
+        status(clients)
+        print("Open a fresh client session to load the updated skills and MCP server.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (BadZipFile, OSError, ValueError, subprocess.CalledProcessError) as exc:
+        print(f"opus-et: {exc}", file=sys.stderr)
+        sys.exit(1)
