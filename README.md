@@ -120,10 +120,10 @@ flowchart LR
 
 ## Getting started
 
-**What this is.** OPUS-ET-AGENT is five [Claude Code](https://code.claude.com/docs) **Agent Skills** — not a standalone program. The "app" is Claude Code itself: you describe your dataset in plain language, and Claude Code, driving these skills, runs the pipeline and pauses at each gate for your sign-off. `opus-et-conductor` orchestrates the three tool-layer skills (`opus-et-warp`, `opus-et-analysis`, `opus-et-visualize`); `opus-et-status` is a read-mostly dashboard you or the conductor can launch alongside a run.
+OPUS-ET-AGENT provides five skills for Claude Code or Codex. Describe your dataset to `opus-et-conductor` to run the pipeline and review the evidence at each scientific gate. The conductor coordinates `opus-et-warp`, `opus-et-analysis` and `opus-et-visualize`. Use `opus-et-status` to inspect progress.
 
 **Prerequisites**
-- [**Claude Code**](https://code.claude.com/docs) — the agent that runs the skills.
+- An agent that runs the skills. Choose [Claude Code](https://code.claude.com/docs) or [Codex](https://developers.openai.com/codex/).
 - **For a real run** — an HPC cluster (SLURM + GPUs) with the cryo-ET toolchain the skills drive: **WARP** (the [`alncat` fork](https://github.com/alncat/warp), required for `--dont_correct_ctf_3d` / `--output_ctf_csv`), **AreTomo2**, **PyTOM**, **OPUS-ET** (`dsdsh`), and **M** (`MTools` / `MCore`), each in its conda env. The conductor's preflight probes for these and reports whatever is missing — it does not install them.
 - **For the in-cell finale** — a local **ChimeraX 1.10 + ArtiaX 0.7.0** desktop (the render runs locally, not on the cluster).
 
@@ -137,6 +137,33 @@ for s in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize opus-
   ln -s "../../$s" ".claude/skills/$s"   # or: cp -r "$s" ".claude/skills/$s"
 done
 ```
+
+### Codex setup
+
+From the root of your local OPUS-ET checkout, link the five skills so Codex can use them from any dataset directory. For a project-only install, set `skill_dir` to that project's `.agents/skills` directory. [Codex skill discovery](https://developers.openai.com/codex/skills/)
+
+```bash
+repo=$(git rev-parse --show-toplevel)
+skill_dir="$HOME/.agents/skills"
+mkdir -p "$skill_dir"
+for skill in opus-et-conductor opus-et-warp opus-et-analysis opus-et-visualize opus-et-status; do
+  ln -s "$repo/$skill" "$skill_dir/"
+done
+```
+
+To use the MCP tools from desktop Codex, register the local server for visualization and the SSH server for cluster work. Run these commands from the checkout on your desktop. The `super` command uses the deployed plugin and an explicit Python path because its non-interactive SSH shell has no `python3` on `PATH`. For another cluster, substitute its SSH alias, interpreter and plugin path. [Codex MCP configuration](https://developers.openai.com/codex/mcp/)
+
+```bash
+codex mcp add opus-desktop -- python3 "$PWD/.agents/plugins/opus-et/scripts/mcp_server.py" --role desktop
+codex mcp add opus-super -- ssh -T super '~/.local/share/uv/tools/kimi-cli/bin/python ~/.agents/plugins/opus-et/scripts/mcp_server.py --role cluster'
+codex mcp list
+```
+
+Open a new Codex session and select `$opus-et-conductor`. To verify the connection against an existing run, give it the absolute project path on the cluster:
+
+> Use $opus-et-conductor and the opus-super connection to read the existing run state at `<cluster project path>`. Report the execution host and the latest checkpoint. Keep this check read-only.
+
+### Antigravity setup
 
 **Standalone Antigravity plugin.** From the checkout, run `python3 tools/build_antigravity_plugin.py dist/opus-et.zip`. The ZIP contains the MCP server, submission hook, shared rules and all five skill directories. Extract it into an empty directory before installing it on another machine. Set `OPUS_ET_PYTHON` to the scientific environment’s Python executable for NumPy-backed training configs, FSC and visualization.
 
@@ -161,11 +188,13 @@ Preflight, project state, checkpoint decisions and validation belong to the clus
 
 For a checkpoint decision, the server asks the scientist through the MCP client's confirmation form. The record includes the supplied reviewer name, decision time and confirmation channel. Clients without form support can open the checkpoint. The scientist then runs `python3 /path/to/opus-et-conductor/scripts/run_state.py confirm "$WORK_DIR" <gate>` in an interactive terminal on the project host.
 
-**Run it.** Open Claude Code in your working directory and hand off the dataset — the conductor takes it from there:
+### Start a run
+
+Open Claude Code or Codex in your working directory and give the conductor the dataset location.
 
 > *"I have a cryo-ET dataset to process end-to-end, on my `<cluster>` cluster; frames + acquisition MDOCs are under `<DATA_DIR>`. Use the OPUS-ET conductor: preflight the toolchain, auto-detect the acquisition parameters, write and validate `pipeline.conf`, and begin the pipeline — pausing at each scientific checkpoint for my sign-off."*
 
-Progress lives in `.opus_run_state.json`, so a fresh Claude Code session resumes from disk, not from chat history. The per-gate record runbook — with the exact prompt for each checkpoint — is in [`opus-et-conductor/references/demo_recording.md`](opus-et-conductor/references/demo_recording.md).
+Progress lives in `.opus_run_state.json`, so a fresh session can resume from disk. The [per-gate runbook](opus-et-conductor/references/demo_recording.md) gives the prompt for each checkpoint.
 
 **Watch the run in a browser.** A pipeline run is hours of SLURM jobs, so `opus-et-status` puts the run's state on one page. It is stdlib-only Python — nothing to install, and nothing left running on the cluster:
 
